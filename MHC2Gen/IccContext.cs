@@ -185,7 +185,7 @@ namespace MHC2Gen
                 return;
 
             int lutSize = RegammaLUT.GetLength(1);
-            
+
             // Create a copy of the current LUT
             var originalLUT = new double[3, lutSize];
             for (int c = 0; c < 3; c++)
@@ -196,32 +196,69 @@ namespace MHC2Gen
                 }
             }
 
-            // Apply luminance-dependent saturation compensation
+            // Apply HDR-aware WOLED desaturation compensation
+            // This works in the PQ (ST2084) domain for HDR content in Rec2020
             for (int i = 0; i < lutSize; i++)
             {
-                // Normalized input position (0-1)
-                double normalizedInput = (double)i / (lutSize - 1);
-                
-                // Calculate luminance factor - more compensation at lower luminance
-                // Using an exponential curve that peaks at low luminance and tapers off
-                double luminanceFactor = Math.Pow(1.0 - normalizedInput, 2.0);
-                
-                // Scale by compensation strength (convert percentage to factor)
-                double compensationFactor = 1.0 + (compensationStrength / 100.0) * luminanceFactor * 0.5;
-                
-                // Get the current values for this LUT entry
+                // Get the current PQ-encoded values
                 double currentR = originalLUT[0, i];
                 double currentG = originalLUT[1, i];
                 double currentB = originalLUT[2, i];
-                
-                // Calculate average (luminance proxy)
-                double avgValue = (currentR + currentG + currentB) / 3.0;
-                
-                // Apply saturation enhancement by pushing colors away from the average
-                // This effectively widens the gamut
-                RegammaLUT[0, i] = Math.Max(0.0, Math.Min(1.0, avgValue + (currentR - avgValue) * compensationFactor));
-                RegammaLUT[1, i] = Math.Max(0.0, Math.Min(1.0, avgValue + (currentG - avgValue) * compensationFactor));
-                RegammaLUT[2, i] = Math.Max(0.0, Math.Min(1.0, avgValue + (currentB - avgValue) * compensationFactor));
+
+                // Convert PQ values to linear luminance for proper processing
+                double linearR = InversePQ(currentR) * 10000; // Convert to cd/m²
+                double linearG = InversePQ(currentG) * 10000;
+                double linearB = InversePQ(currentB) * 10000;
+
+                // Calculate luminance using proper Rec2020 coefficients
+                double luminance = 0.2627 * linearR + 0.6780 * linearG + 0.0593 * linearB;
+
+                // Apply compensation based on luminance level (more at lower luminance)
+                // Use a more sophisticated curve that preserves HDR range
+                double luminanceNormalized = Math.Min(luminance / 10000.0, 1.0); // Normalize to 0-1 for 10,000 cd/m² peak
+                double luminanceFactor = Math.Pow(1.0 - luminanceNormalized, 1.5); // Less aggressive curve
+
+                // Scale compensation strength based on signal level and luminance
+                double adaptiveCompensation = (compensationStrength / 100.0) * luminanceFactor * 0.3; // Reduced intensity
+
+                // Apply saturation enhancement in linear light domain
+                if (luminance > 0.01) // Avoid division by very small numbers
+                {
+                    // Calculate chromaticity ratios in linear space
+                    double rRatio = linearR / luminance;
+                    double gRatio = linearG / luminance;
+                    double bRatio = linearB / luminance;
+
+                    // Apply adaptive saturation boost
+                    double saturationFactor = 1.0 + adaptiveCompensation;
+
+                    // Enhance chromaticity while preserving luminance
+                    double enhancedR = luminance * (rRatio * saturationFactor + (1.0 - saturationFactor) / 3.0);
+                    double enhancedG = luminance * (gRatio * saturationFactor + (1.0 - saturationFactor) / 3.0);
+                    double enhancedB = luminance * (bRatio * saturationFactor + (1.0 - saturationFactor) / 3.0);
+
+                    // Ensure we don't exceed reasonable HDR bounds (preserve HDR range)
+                    enhancedR = Math.Max(0.0, Math.Min(enhancedR, 10000.0));
+                    enhancedG = Math.Max(0.0, Math.Min(enhancedG, 10000.0));
+                    enhancedB = Math.Max(0.0, Math.Min(enhancedB, 10000.0));
+
+                    // Convert back to PQ domain
+                    RegammaLUT[0, i] = PQ(enhancedR / 10000.0);
+                    RegammaLUT[1, i] = PQ(enhancedG / 10000.0);
+                    RegammaLUT[2, i] = PQ(enhancedB / 10000.0);
+                }
+                else
+                {
+                    // For very dark values, preserve original
+                    RegammaLUT[0, i] = currentR;
+                    RegammaLUT[1, i] = currentG;
+                    RegammaLUT[2, i] = currentB;
+                }
+
+                // Final safety clamp to valid PQ range
+                RegammaLUT[0, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[0, i]));
+                RegammaLUT[1, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[1, i]));
+                RegammaLUT[2, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[2, i]));
             }
         }
 
