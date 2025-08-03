@@ -25,4 +25,10 @@ public class GenerateProfileCommand
 
     public double HdrGammaMultiplier { get; set; }
     public double HdrBrightnessMultiplier { get; set; }
+
+    /// <summary>
+    /// WOLED desaturation compensation strength (0-100). 
+    /// Widens gamut at low luminance levels to compensate for WOLED display desaturation.
+    /// </summary>
+    public double WOLEDDesaturationCompensation { get; set; } = 90;
 }

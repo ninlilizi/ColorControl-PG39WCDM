@@ -79,7 +79,7 @@ namespace MHC2Gen
 
         public void ApplySdrAcm(double whiteLuminance = 120.0, double blackLuminance = 0.0, double gamma = 2.2, double boostPercentage = 0, double shadowDetailBoost = 0)
         {
-            var lutSize = 1024;
+            var lutSize = 4096; // Increased from 1024 to 4096 for maximum accuracy
             var amplifier = boostPercentage == 0 ? 1 : 1 + boostPercentage / 100;
 
             RegammaLUT = new double[3, lutSize];
@@ -91,19 +91,15 @@ namespace MHC2Gen
                 // Average between sSRGB and Piecewise gamma
                 if (shadowDetailBoost > 0)
                 {
-                    var piecewiseValue = (double)i / 1023;
+                    var piecewiseValue = (double)i / (lutSize - 1); // Fixed: use lutSize-1
 
-                    var correctedBoost = (shadowDetailBoost * (1023 - i)) / 1023;
+                    var correctedBoost = (shadowDetailBoost * (lutSize - 1 - i)) / (lutSize - 1); // Fixed: use lutSize-1
 
                     value = ((value * (100 - correctedBoost)) + (piecewiseValue * correctedBoost)) / 100;
                 }
 
                 for (var c = 0; c < 3; c++)
                 {
-                    //var tempPercentage = boostPercentage * ((double)i / lutSize);
-
-                    //var amplifier = tempPercentage == 0 ? 1 : tempPercentage > 0 ? 1 + tempPercentage / 100 : 1 - tempPercentage / 100;
-
                     RegammaLUT[c, i] = value * amplifier;
                 }
             }
@@ -111,14 +107,14 @@ namespace MHC2Gen
 
         public void ApplyPiecewise(double boostPercentage = 0)
         {
-            var lutSize = 1024;
+            var lutSize = 4096; // Increased from 1024 to 4096 for maximum accuracy
             var amplifier = boostPercentage == 0 ? 1 : 1 + boostPercentage / 100;
 
             RegammaLUT = new double[3, lutSize];
 
             for (var i = 0; i < lutSize; i++)
             {
-                var value = (double)i / 1023;
+                var value = (double)i / (lutSize - 1); // Fixed: use lutSize-1
 
                 for (var c = 0; c < 3; c++)
                 {
@@ -129,7 +125,7 @@ namespace MHC2Gen
 
         public void ApplyToneMappingCurve(double maxInputNits = 400, double maxOutputNits = 400, double curve_like = 400)
         {
-            int lutSize = 1024;
+            int lutSize = 4096; // Increased from 1024 to 4096 for maximum accuracy
             bool lutExist = true;
             if (RegammaLUT == null)
             {
@@ -154,10 +150,9 @@ namespace MHC2Gen
             }
         }
 
-
         public void ApplyToneMappingCurveGamma(double maxInputNits = 400, double maxOutputNits = 400, double curve_like = 400)
         {
-            int lutSize = 1024;
+            int lutSize = 4096; // Increased from 1024 to 4096 for maximum accuracy
             bool lutExist = true;
             if (RegammaLUT == null)
             {
@@ -180,6 +175,53 @@ namespace MHC2Gen
                 {
                     RegammaLUT[c, i] = N_prime;
                 }
+            }
+        }
+
+
+        public void ApplyWOLEDDesaturationCompensation(double compensationStrength)
+        {
+            if (RegammaLUT == null || compensationStrength <= 0)
+                return;
+
+            int lutSize = RegammaLUT.GetLength(1);
+            
+            // Create a copy of the current LUT
+            var originalLUT = new double[3, lutSize];
+            for (int c = 0; c < 3; c++)
+            {
+                for (int i = 0; i < lutSize; i++)
+                {
+                    originalLUT[c, i] = RegammaLUT[c, i];
+                }
+            }
+
+            // Apply luminance-dependent saturation compensation
+            for (int i = 0; i < lutSize; i++)
+            {
+                // Normalized input position (0-1)
+                double normalizedInput = (double)i / (lutSize - 1);
+                
+                // Calculate luminance factor - more compensation at lower luminance
+                // Using an exponential curve that peaks at low luminance and tapers off
+                double luminanceFactor = Math.Pow(1.0 - normalizedInput, 2.0);
+                
+                // Scale by compensation strength (convert percentage to factor)
+                double compensationFactor = 1.0 + (compensationStrength / 100.0) * luminanceFactor * 0.5;
+                
+                // Get the current values for this LUT entry
+                double currentR = originalLUT[0, i];
+                double currentG = originalLUT[1, i];
+                double currentB = originalLUT[2, i];
+                
+                // Calculate average (luminance proxy)
+                double avgValue = (currentR + currentG + currentB) / 3.0;
+                
+                // Apply saturation enhancement by pushing colors away from the average
+                // This effectively widens the gamut
+                RegammaLUT[0, i] = Math.Max(0.0, Math.Min(1.0, avgValue + (currentR - avgValue) * compensationFactor));
+                RegammaLUT[1, i] = Math.Max(0.0, Math.Min(1.0, avgValue + (currentG - avgValue) * compensationFactor));
+                RegammaLUT[2, i] = Math.Max(0.0, Math.Min(1.0, avgValue + (currentB - avgValue) * compensationFactor));
             }
         }
 
@@ -361,6 +403,7 @@ namespace MHC2Gen
 
         public double HdrGammaMultiplier { get; set; }
         public double HdrBrightnessMultiplier { get; set; }
+        public double WOLEDDesaturationCompensation { get; set; }
     }
 
     internal class IccContext
@@ -864,7 +907,7 @@ namespace MHC2Gen
             outputProfile.HeaderAttributes = profile.HeaderAttributes;
             outputProfile.HeaderRenderingIntent = RenderingIntent.ABSOLUTE_COLORIMETRIC;
 
-            var new_desc = $"CSC: HDR10 to SDR ({GetDeviceDescription()}, {use_max_nits:0} nits)";
+            var new_desc = $"HDR10 to SDR ({GetDeviceDescription()}, {use_max_nits:0} nits)";
             var new_desc_mlu = new MLU(new_desc);
             outputProfile.WriteTag(SafeTagSignature.ProfileDescriptionTag, new_desc_mlu);
 
@@ -959,18 +1002,16 @@ namespace MHC2Gen
             }, outputprofileTrc);
 
             // copy characteristics from device profile
-            var copy_tags = new TagSignature[] {
-                TagSignature.LuminanceTag,
-                TagSignature.DeviceMfgDescTag,
-                TagSignature.DeviceModelDescTag,
-            };
-
+            var copy_tags = new TagSignature[] { TagSignature.DeviceMfgDescTag, TagSignature.DeviceModelDescTag };
             unsafe
             {
                 foreach (var tag in copy_tags)
                 {
                     var tag_ptr = profile.ReadTag(tag);
-                    outputProfile.WriteTag(tag, tag_ptr);
+                    if (tag_ptr != null)
+                    {
+                        outputProfile.WriteTag(tag, tag_ptr);
+                    }
                 }
             }
 
@@ -978,24 +1019,11 @@ namespace MHC2Gen
             //var outctx = new IccContext(outputProfile);
             //outctx.WriteIlluminantRelativeMediaBlackPoint(illuminantRelativeBlackPoint);
 
-            // SDR ACM will not work if the profile has negative XYZ colorants (possibly due to limited precision)
-            foreach (var sig in new ISafeTagSignature<CIEXYZ>[] { SafeTagSignature.RedColorantTag, SafeTagSignature.GreenColorantTag, SafeTagSignature.BlueColorantTag })
-            {
-                var xyz = outputProfile.ReadTag(sig);
-                if (xyz.X < 0) xyz.X = 0;
-                if (xyz.Y < 0) xyz.Y = 0;
-                if (xyz.Z < 0) xyz.Z = 0;
-                outputProfile.WriteTag(sig, xyz);
-            }
-
             // set output profile description
-
             outputProfile.HeaderManufacturer = profile.HeaderManufacturer;
             outputProfile.HeaderModel = profile.HeaderModel;
             outputProfile.HeaderAttributes = profile.HeaderAttributes;
-            outputProfile.HeaderRenderingIntent = profile.HeaderRenderingIntent;
-
-            // outputProfile.ProfileVersion = profile.ProfileVersion;
+            outputProfile.HeaderRenderingIntent = RenderingIntent.ABSOLUTE_COLORIMETRIC;
 
             var new_desc = $"SDR ACM: {profile.GetInfo(InfoType.Description)}";
             var new_desc_mlu = new MLU(new_desc);
@@ -1021,6 +1049,7 @@ namespace MHC2Gen
             var sourcePrimaries = RgbPrimaries.sRGB;
 
             var xyz_to_srgb = XYZToRgb(sourcePrimaries);
+
 
             Matrix<double> user_matrix = DenseMatrix.CreateIdentity(3);
 
@@ -1115,6 +1144,7 @@ namespace MHC2Gen
                     MHC2.ApplyToneMappingCurve(from_nits, from_nits, curve_like);
                     MHC2.ApplyToneMappingCurveGamma(from_nits, from_nits, gamma_like);
 
+                    MHC2.ApplyWOLEDDesaturationCompensation(95);
                 }
             }
             else
@@ -1185,7 +1215,8 @@ namespace MHC2Gen
                 ToneMappingFromLuminance = command.ToneMappingFromLuminance,
                 ToneMappingToLuminance = command.ToneMappingToLuminance,
                 HdrGammaMultiplier = command.HdrGammaMultiplier,
-                HdrBrightnessMultiplier = command.HdrBrightnessMultiplier
+                HdrBrightnessMultiplier = command.HdrBrightnessMultiplier,
+                WOLEDDesaturationCompensation = 95
             };
 
             var ccDesc = JsonSerializer.Serialize(extraInfoTag);

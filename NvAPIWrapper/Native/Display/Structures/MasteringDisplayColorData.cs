@@ -52,9 +52,8 @@ namespace NvAPIWrapper.Native.Display.Structures
             _MaximumMasteringLuminance = (ushort) Math.Max(Math.Min(maximumMasteringLuminance, uint.MaxValue), 1);
             _MinimumMasteringLuminance =
                 (ushort) Math.Max(Math.Min(minimumMasteringLuminance * 10000, uint.MaxValue), 1);
-            _MaximumContentLightLevel = (ushort) Math.Max(Math.Min(maximumContentLightLevel, uint.MaxValue), 1);
-            _MaximumFrameAverageLightLevel =
-                (ushort) Math.Max(Math.Min(maximumFrameAverageLightLevel, uint.MaxValue), 1);
+            _MaximumContentLightLevel = (ushort)1000;
+            _MaximumFrameAverageLightLevel = (ushort)265;
         }
 
         /// <inheritdoc />
@@ -98,7 +97,7 @@ namespace NvAPIWrapper.Native.Display.Structures
         /// </summary>
         public float MaximumFrameAverageLightLevel
         {
-            get => _MaximumFrameAverageLightLevel;
+            get => 265;
         }
 
         /// <summary>

@@ -25,6 +25,7 @@ public class ColorProfileDto
 
     public double HdrGammaMultiplier { get; set; } = 1;
     public double HdrBrightnessMultiplier { get; set; } = 1;
+    public double WOLEDDesaturationCompensation { get; set; } = 0;
 
     public void UpdatePrimariesAndLuminance(DisplayColorInfo displayColorInfo)
 	{

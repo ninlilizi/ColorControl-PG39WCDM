@@ -73,19 +73,19 @@ internal class ColorProfileViewModel : BaseViewModel
 	public Dictionary<ColorGamut, string> ColorGamuts { get; } = Utils.EnumToDictionary<ColorGamut>();
 	public ColorGamut ColorGamut { get; set; } = ColorGamut.Native;
 	public Dictionary<SDRTransferFunction, string> SDRTransferFunctions { get; } = Utils.EnumToDictionary<SDRTransferFunction>();
-	public SDRTransferFunction SDRTransferFunction { get; set; } = SDRTransferFunction.PurePower;
+	public SDRTransferFunction SDRTransferFunction { get; set; } = SDRTransferFunction.ToneMappedPiecewise;
 	[Range(0.1, 10)]
-	public double CustomGamma { get; set; } = 2.20;
+	public double CustomGamma { get; set; } = 2.40;
 	[Range(0, 10)]
-	public double MinCLL { get; set; } = 0;
+	public double MinCLL { get; set; } = 0.0007171630859375;
 	[Range(11, 10000)]
 	public double MaxCLL { get; set; } = 1000;
 	[Range(0, 10)]
-	public double BlackLuminance { get; set; } = 0;
+	public double BlackLuminance { get; set; } = 0.0007171630859375;
 	[Range(11, 10000)]
-	public double WhiteLuminance { get; set; } = 1000;
+	public double WhiteLuminance { get; set; } = 265;
 	[Range(0, 10)]
-	public double SDRMinBrightness { get; set; } = 0;
+	public double SDRMinBrightness { get; set; } = 0.0007171630859375;
 	[Range(11, 10000)]
 	public double SDRMaxBrightness { get; set; } = 100;
 	[Range(-50, 50)]
@@ -111,9 +111,9 @@ internal class ColorProfileViewModel : BaseViewModel
 	public bool PrimariesEnabled { get; set; } = true;
 
 	[Range(400, 10000)]
-	public double ToneMappingFromLuminance { get; set; } = 400;
+	public double ToneMappingFromLuminance { get; set; } = 1000;
 	[Range(400, 10000)]
-	public double ToneMappingToLuminance { get; set; } = 400;
+	public double ToneMappingToLuminance { get; set; } = 1000;
 
 
 	public bool ToneMappingSettingsEnabled { get; set; }
@@ -124,7 +124,12 @@ internal class ColorProfileViewModel : BaseViewModel
 	public double HdrBrightnessMultiplier { get; set; } = 1;
 
 	[Range(.04, 25)]
-	public double HdrGammaMultiplier { get; set; } = 1;
+	public double HdrGammaMultiplier { get; set; } = 0.14;
+
+	[Range(0, 100)]
+	public double WOLEDDesaturationCompensation { get; set; } = 0;
+
+	public bool GenerateCubeLut { get; set; } = true;
 
 	public override string this[string columnName]
 	{

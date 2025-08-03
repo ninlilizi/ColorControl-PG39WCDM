@@ -56,7 +56,7 @@ namespace NvAPIWrapper.Native.Display.Structures
         /// </summary>
         public float MaximumDesiredContentFrameAverageLightLevel
         {
-            get => _MaximumDesiredFrameAverageLightLevel;
+            get => 265;
         }
 
         /// <summary>

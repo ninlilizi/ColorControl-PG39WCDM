@@ -26,6 +26,80 @@ public class MHC2Wrapper
 
     }
 
+    /// <summary>
+    /// Generate a .cube LUT file from a profile generation command
+    /// </summary>
+    /// <param name="command">Profile generation command</param>
+    /// <param name="filePath">Path where the .cube file will be saved</param>
+    /// <param name="lutSize">Size of the 3D LUT (17, 33, 65, etc.)</param>
+    /// <param name="title">Optional title for the LUT</param>
+    public static void GenerateCubeLutFile(GenerateProfileCommand command, string filePath, int lutSize = 65, string? title = null)
+    {
+        CubeLutGenerator.GenerateCubeLut(command, filePath, lutSize, title);
+    }
+
+    /// <summary>
+    /// Generate an HDR .cube LUT file using BT.2020 color space and SMPTE ST 2084 (PQ) encoding
+    /// For HDR workflows requiring proper HDR10 LUT format
+    /// </summary>
+    /// <param name="command">Profile generation command</param>
+    /// <param name="filePath">Path where the .cube file will be saved</param>
+    /// <param name="lutSize">Size of the 3D LUT (17, 33, 65, etc.)</param>
+    /// <param name="title">Optional title for the LUT</param>
+    public static void GenerateHdrCubeLutFile(GenerateProfileCommand command, string filePath, int lutSize = 65, string? title = null)
+    {
+        CubeLutGenerator.GenerateHdrCubeLut(command, filePath, lutSize, title);
+    }
+
+    /// <summary>
+    /// Generate an sRGB SDR .cube LUT file using standard Rec.709/sRGB encoding
+    /// For standard dynamic range workflows as a companion to HDR LUTs
+    /// </summary>
+    /// <param name="command">Profile generation command</param>
+    /// <param name="filePath">Path where the .cube file will be saved</param>
+    /// <param name="lutSize">Size of the 3D LUT (17, 33, 65, etc.)</param>
+    /// <param name="title">Optional title for the LUT</param>
+    public static void GenerateSdrCubeLutFile(GenerateProfileCommand command, string filePath, int lutSize = 65, string? title = null)
+    {
+        CubeLutGenerator.GenerateSdrCubeLut(command, filePath, lutSize, title);
+    }
+
+    /// <summary>
+    /// Generate both HDR and SDR .cube LUT files for comprehensive workflow support
+    /// </summary>
+    /// <param name="command">Profile generation command</param>
+    /// <param name="hdrFilePath">Path where the HDR .cube file will be saved</param>
+    /// <param name="sdrFilePath">Path where the SDR .cube file will be saved</param>
+    /// <param name="lutSize">Size of the 3D LUT (17, 33, 65, etc.)</param>
+    /// <param name="title">Optional title for the LUTs</param>
+    public static void GenerateDualCubeLutFiles(GenerateProfileCommand command, string hdrFilePath, string sdrFilePath, int lutSize = 65, string? title = null)
+    {
+        CubeLutGenerator.GenerateHdrCubeLut(command, hdrFilePath, lutSize, title != null ? $"{title} - HDR" : null);
+        CubeLutGenerator.GenerateSdrCubeLut(command, sdrFilePath, lutSize, title != null ? $"{title} - SDR" : null);
+    }
+
+    /// <summary>
+    /// Generate both ICC profile and .cube LUT file
+    /// </summary>
+    /// <param name="command">Profile generation command</param>
+    /// <param name="iccFilePath">Path for the ICC profile</param>
+    /// <param name="cubeFilePath">Path for the .cube LUT file</param>
+    /// <param name="lutSize">Size of the 3D LUT</param>
+    /// <param name="title">Optional title for the LUT</param>
+    /// <returns>ICC profile bytes</returns>
+    public static byte[] GenerateProfileAndCubeLut(GenerateProfileCommand command, string iccFilePath, string cubeFilePath, int lutSize = 65, string? title = null)
+    {
+        var profileBytes = GenerateSdrAcmProfile(command);
+        
+        // Save ICC profile
+        File.WriteAllBytes(iccFilePath, profileBytes);
+        
+        // Generate .cube LUT
+        CubeLutGenerator.GenerateCubeLut(command, cubeFilePath, lutSize, title);
+        
+        return profileBytes;
+    }
+
     public static (double MinNits, double MaxNits) GetMinMaxLuminance(string profileName)
     {
         var fileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), $@"System32\spool\drivers\color\{profileName}");
@@ -65,14 +139,15 @@ public class MHC2Wrapper
             MaxCLL = deviceContext.MHC2?.MaxCLL ?? deviceContext.max_nits,
             SDRMinBrightness = deviceContext.ExtraInfoTag?.SDRMinBrightness ?? 0,
             SDRMaxBrightness = deviceContext.ExtraInfoTag?.SDRMaxBrightness ?? 100,
-            SDRTransferFunction = deviceContext.ExtraInfoTag?.SDRTransferFunction ?? SDRTransferFunction.PurePower,
+            SDRTransferFunction = deviceContext.ExtraInfoTag?.SDRTransferFunction ?? SDRTransferFunction.ToneMappedPiecewise,
             SDRBrightnessBoost = deviceContext.ExtraInfoTag?.SDRBrightnessBoost ?? 0,
             ShadowDetailBoost = deviceContext.ExtraInfoTag?.ShadowDetailBoost ?? 0,
             Gamma = deviceContext.ExtraInfoTag?.Gamma ?? 2.2,
             ToneMappingFromLuminance = deviceContext.ExtraInfoTag?.ToneMappingFromLuminance ?? 400,
             ToneMappingToLuminance = deviceContext.ExtraInfoTag?.ToneMappingToLuminance ?? 400,
             HdrGammaMultiplier = deviceContext.ExtraInfoTag?.HdrGammaMultiplier ?? 1,
-            HdrBrightnessMultiplier = deviceContext.ExtraInfoTag?.HdrBrightnessMultiplier ?? 1
+            HdrBrightnessMultiplier = deviceContext.ExtraInfoTag?.HdrBrightnessMultiplier ?? 1,
+            WOLEDDesaturationCompensation = deviceContext.ExtraInfoTag?.WOLEDDesaturationCompensation ?? 0
         };
     }
 }

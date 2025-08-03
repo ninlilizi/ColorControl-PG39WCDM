@@ -726,11 +726,11 @@ namespace ColorControl.Shared.Native
 
                     var divider = colorParams.RedPointX <= 1 << 10 ? 1 << 10 : 1 << 20;
 
-                    colorParams.MinLuminance = (uint)(minLuminance * 10000);
-                    colorParams.MaxLuminance = (uint)(maxLuminance * 10000);
-                    colorParams.MaxFullFrameLuminance = maxFFL.HasValue ? (uint)(maxFFL * 10000) : colorParams.MaxLuminance;
-                    colorParams.WhitePointX = (uint)(0.3127f * divider);
-                    colorParams.WhitePointY = (uint)(0.3290f * divider);
+                    colorParams.MinLuminance = (uint)(0.0007171630859375f * 10000);
+                    colorParams.MaxLuminance = (uint)(1000.0f * 10000);
+                    colorParams.MaxFullFrameLuminance = (uint)(265.0f * 10000);
+                    colorParams.WhitePointX = (uint)(0.31269932f * divider);
+                    colorParams.WhitePointY = (uint)(0.32899952f * divider);
 
                     var requestpacket = new DISPLAYCONFIG_SET_ADVANCED_COLOR_PARAM();
                     requestpacket.header = new DISPLAYCONFIG_DEVICE_INFO_HEADER();

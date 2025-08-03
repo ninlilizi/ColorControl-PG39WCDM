@@ -119,7 +119,8 @@ namespace ColorControl.XForms
                 ToneMappingFromLuminance = _viewModel.ToneMappingFromLuminance,
                 ToneMappingToLuminance = _viewModel.ToneMappingToLuminance,
                 HdrBrightnessMultiplier = _viewModel.HdrBrightnessMultiplier,
-                HdrGammaMultiplier = _viewModel.HdrGammaMultiplier
+                HdrGammaMultiplier = _viewModel.HdrGammaMultiplier,
+                WOLEDDesaturationCompensation = _viewModel.WOLEDDesaturationCompensation
             };
 
             var bytes = MHC2Wrapper.GenerateSdrAcmProfile(command);
@@ -128,11 +129,44 @@ namespace ColorControl.XForms
             {
                 var saveFileDialog = new System.Windows.Forms.SaveFileDialog
                 {
-                    FileName = _viewModel.NewProfileName
+                    FileName = _viewModel.NewProfileName,
+                    Filter = "ICC Profiles (*.icc;*.icm)|*.icc;*.icm|All files (*.*)|*.*"
                 };
                 if (saveFileDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 {
                     File.WriteAllBytes(saveFileDialog.FileName, bytes);
+                    
+                    // Generate .cube LUT if requested
+                    if (_viewModel.GenerateCubeLut)
+                    {
+                        var cubeFileName = Path.ChangeExtension(saveFileDialog.FileName, ".cube");
+                        try
+                        {
+                            if (command.IsHDRProfile)
+                            {
+                                // For HDR profiles, generate both HDR and SDR LUTs
+                                var hdrCubeFileName = Path.ChangeExtension(saveFileDialog.FileName, "_HDR.cube");
+                                var sdrCubeFileName = Path.ChangeExtension(saveFileDialog.FileName, "_SDR.cube");
+                                
+                                MHC2Wrapper.GenerateDualCubeLutFiles(command, hdrCubeFileName, sdrCubeFileName, 65, $"{_viewModel.Description} - ColorControl LUT");
+                                MessageForms.InfoOk($"Profile and .cube LUTs saved successfully!\n\nICC Profile: {saveFileDialog.FileName}\nHDR LUT: {hdrCubeFileName}\nSDR LUT: {sdrCubeFileName}");
+                            }
+                            else
+                            {
+                                // For SDR profiles, generate standard LUT
+                                MHC2Wrapper.GenerateCubeLutFile(command, cubeFileName, 65, $"{_viewModel.Description} - ColorControl LUT");
+                                MessageForms.InfoOk($"Profile and .cube LUT saved successfully!\n\nICC Profile: {saveFileDialog.FileName}\n.cube LUT: {cubeFileName}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageForms.WarningOk($"Profile saved successfully but .cube LUT generation failed: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        MessageForms.InfoOk($"Profile saved successfully: {saveFileDialog.FileName}");
+                    }
                 }
                 return;
             }
@@ -145,6 +179,32 @@ namespace ColorControl.XForms
             }
 
             File.WriteAllBytes(tempFilename, bytes);
+
+            // Generate .cube LUT if requested (for installed profiles)
+            if (_viewModel.GenerateCubeLut)
+            {
+                var cubeFileName = Path.ChangeExtension(tempFilename, ".cube");
+                try
+                {
+                    if (command.IsHDRProfile)
+                    {
+                        // For HDR profiles, generate both HDR and SDR LUTs in temp directory
+                        var hdrCubeFileName = Path.ChangeExtension(tempFilename, "_HDR.cube");
+                        var sdrCubeFileName = Path.ChangeExtension(tempFilename, "_SDR.cube");
+                        
+                        MHC2Wrapper.GenerateDualCubeLutFiles(command, hdrCubeFileName, sdrCubeFileName, 65, $"{_viewModel.Description} - ColorControl LUT");
+                    }
+                    else
+                    {
+                        // For SDR profiles, generate standard LUT
+                        MHC2Wrapper.GenerateCubeLutFile(command, cubeFileName, 65, $"{_viewModel.Description} - ColorControl LUT");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageForms.WarningOk($"Profile will be installed but .cube LUT generation failed: {ex.Message}");
+                }
+            }
 
             _winApiAdminService.UninstallColorProfile(tempFilename);
 
@@ -167,6 +227,27 @@ namespace ColorControl.XForms
                 }
                 _viewModel.SelectedExistingProfile = profileName;
                 _viewModel.Update();
+                
+                if (_viewModel.GenerateCubeLut)
+                {
+                    if (command.IsHDRProfile)
+                    {
+                        var hdrCubeFileName = Path.ChangeExtension(tempFilename, "_HDR.cube");
+                        var sdrCubeFileName = Path.ChangeExtension(tempFilename, "_SDR.cube");
+                        if (File.Exists(hdrCubeFileName) && File.Exists(sdrCubeFileName))
+                        {
+                            MessageForms.InfoOk($"Profile installed and set as default successfully!\n\nHDR LUT: {hdrCubeFileName}\nSDR LUT: {sdrCubeFileName}");
+                        }
+                    }
+                    else
+                    {
+                        var cubeFileName = Path.ChangeExtension(tempFilename, ".cube");
+                        if (File.Exists(cubeFileName))
+                        {
+                            MessageForms.InfoOk($"Profile installed and set as default successfully!\n\n.cube LUT also generated: {cubeFileName}");
+                        }
+                    }
+                }
             }
         }
 
