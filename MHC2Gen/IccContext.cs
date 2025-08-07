@@ -152,7 +152,7 @@ namespace MHC2Gen
 
         public void ApplyToneMappingCurveGamma(double maxInputNits = 400, double maxOutputNits = 400, double curve_like = 400)
         {
-            int lutSize = 4096; // Increased from 1024 to 4096 for maximum accuracy
+            int lutSize = 4096;
             bool lutExist = true;
             if (RegammaLUT == null)
             {
@@ -163,6 +163,13 @@ namespace MHC2Gen
             double L_target = (1 * (PQ((curve_like) / 10000.0) / PQ((maxInputNits) / 10000.0)));
             double L_target_prime = 1 * (PQ((curve_like) / 10000) / PQ((maxOutputNits) / 10000.0));
             double difference = L_target_prime;
+            
+            // Define toe correction parameters
+            const double displayBlackLevelNits = 0.0007171630859375; // Display's actual black level
+            const double toeThresholdNits = 1.0;
+            double blackLevelPQ = PQ(displayBlackLevelNits / 10000.0);
+            double thresholdPQ = PQ(toeThresholdNits / 10000.0);
+            
             for (int i = 0; i < lutSize; i++)
             {
                 double N = lutExist ? RegammaLUT[0, i] : (double)i / (lutSize - 1);
@@ -170,7 +177,33 @@ namespace MHC2Gen
                 double L = InversePQ(N_converted) * 10000 * (maxInputNits / curve_like);
 
                 double N_prime = PQ(L / 10000);
+                
+                // Only apply toe correction for dark values (0.0007-1.0 nits)
+                if (N <= thresholdPQ)
+                {
+                    double actualLuminance = InversePQ(N) * 10000;
+                    
+                    if (actualLuminance >= displayBlackLevelNits && actualLuminance <= toeThresholdNits)
+                    {
+                        double toePosition = (actualLuminance - displayBlackLevelNits) / (toeThresholdNits - displayBlackLevelNits);
+
+                        double mappingCurve = Math.Pow(toePosition, 0.9);
+
+                        double N_threshold = thresholdPQ * difference;
+                        double L_threshold = InversePQ(N_threshold) * 10000 * (maxInputNits / curve_like);
+                        double N_prime_threshold = PQ(L_threshold / 10000);
+
+                        double targetAtThreshold = N_prime_threshold;
+                        N_prime = blackLevelPQ + (targetAtThreshold - blackLevelPQ) * mappingCurve;
+                    }
+                    else if (actualLuminance < displayBlackLevelNits)
+                    {
+                        N_prime = blackLevelPQ;
+                    }
+                }
+
                 N_prime = Math.Max(0.0, Math.Min(1.0, N_prime));
+                
                 for (int c = 0; c < 3; c++)
                 {
                     RegammaLUT[c, i] = N_prime;
@@ -186,7 +219,6 @@ namespace MHC2Gen
 
             int lutSize = RegammaLUT.GetLength(1);
 
-            // Create a copy of the current LUT
             var originalLUT = new double[3, lutSize];
             for (int c = 0; c < 3; c++)
             {
@@ -200,62 +232,48 @@ namespace MHC2Gen
             // This works in the PQ (ST2084) domain for HDR content in Rec2020
             for (int i = 0; i < lutSize; i++)
             {
-                // Get the current PQ-encoded values
                 double currentR = originalLUT[0, i];
                 double currentG = originalLUT[1, i];
                 double currentB = originalLUT[2, i];
 
-                // Convert PQ values to linear luminance for proper processing
-                double linearR = InversePQ(currentR) * 10000; // Convert to cd/m²
+                double linearR = InversePQ(currentR) * 10000;
                 double linearG = InversePQ(currentG) * 10000;
                 double linearB = InversePQ(currentB) * 10000;
 
-                // Calculate luminance using proper Rec2020 coefficients
                 double luminance = 0.2627 * linearR + 0.6780 * linearG + 0.0593 * linearB;
 
-                // Apply compensation based on luminance level (more at lower luminance)
-                // Use a more sophisticated curve that preserves HDR range
-                double luminanceNormalized = Math.Min(luminance / 10000.0, 1.0); // Normalize to 0-1 for 10,000 cd/m² peak
-                double luminanceFactor = Math.Pow(1.0 - luminanceNormalized, 1.5); // Less aggressive curve
+                double luminanceNormalized = Math.Min(luminance / 10000.0, 1.0);
+                double luminanceFactor = Math.Pow(1.0 - luminanceNormalized, 1.5);
 
-                // Scale compensation strength based on signal level and luminance
-                double adaptiveCompensation = (compensationStrength / 100.0) * luminanceFactor * 0.3; // Reduced intensity
+                double adaptiveCompensation = (compensationStrength / 100.0) * luminanceFactor * 0.3;
 
-                // Apply saturation enhancement in linear light domain
-                if (luminance > 0.01) // Avoid division by very small numbers
+                if (luminance > 0.01)
                 {
-                    // Calculate chromaticity ratios in linear space
                     double rRatio = linearR / luminance;
                     double gRatio = linearG / luminance;
                     double bRatio = linearB / luminance;
 
-                    // Apply adaptive saturation boost
                     double saturationFactor = 1.0 + adaptiveCompensation;
 
-                    // Enhance chromaticity while preserving luminance
                     double enhancedR = luminance * (rRatio * saturationFactor + (1.0 - saturationFactor) / 3.0);
                     double enhancedG = luminance * (gRatio * saturationFactor + (1.0 - saturationFactor) / 3.0);
                     double enhancedB = luminance * (bRatio * saturationFactor + (1.0 - saturationFactor) / 3.0);
 
-                    // Ensure we don't exceed reasonable HDR bounds (preserve HDR range)
                     enhancedR = Math.Max(0.0, Math.Min(enhancedR, 10000.0));
                     enhancedG = Math.Max(0.0, Math.Min(enhancedG, 10000.0));
                     enhancedB = Math.Max(0.0, Math.Min(enhancedB, 10000.0));
 
-                    // Convert back to PQ domain
                     RegammaLUT[0, i] = PQ(enhancedR / 10000.0);
                     RegammaLUT[1, i] = PQ(enhancedG / 10000.0);
                     RegammaLUT[2, i] = PQ(enhancedB / 10000.0);
                 }
                 else
                 {
-                    // For very dark values, preserve original
                     RegammaLUT[0, i] = currentR;
                     RegammaLUT[1, i] = currentG;
                     RegammaLUT[2, i] = currentB;
                 }
 
-                // Final safety clamp to valid PQ range
                 RegammaLUT[0, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[0, i]));
                 RegammaLUT[1, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[1, i]));
                 RegammaLUT[2, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[2, i]));
@@ -526,7 +544,7 @@ namespace MHC2Gen
                 1, 0, 0,
                 0, 1, 0,
                 0, 0, 1,
-                1, 1, 1
+                1, 1, 1,
             });
             Span<double> xyz = stackalloc double[3];
 
@@ -789,11 +807,11 @@ namespace MHC2Gen
             }
             else
             {
-                mhc2_lut = new double[,]
-                {
-                    { 0, 1 },
-                    { 0, 1 },
-                    { 0, 1 },
+                mhc2_lut = new double[,] 
+                { 
+                    { 0, 1 }, 
+                    { 0, 1 }, 
+                    { 0, 1 }, 
                 };
             }
 
@@ -1036,25 +1054,13 @@ namespace MHC2Gen
                 Red = devicePrimaries.Red.ToXYZ().ToCIExyY(),
                 Green = devicePrimaries.Green.ToXYZ().ToCIExyY(),
                 Blue = devicePrimaries.Blue.ToXYZ().ToCIExyY()
-            }, outputprofileTrc);
+            }, new RgbToneCurve(profileRedToneCurve, profileGreenToneCurve, profileBlueToneCurve));
 
-            // copy characteristics from device profile
-            var copy_tags = new TagSignature[] { TagSignature.DeviceMfgDescTag, TagSignature.DeviceModelDescTag };
-            unsafe
-            {
-                foreach (var tag in copy_tags)
-                {
-                    var tag_ptr = profile.ReadTag(tag);
-                    if (tag_ptr != null)
-                    {
-                        outputProfile.WriteTag(tag, tag_ptr);
-                    }
-                }
-            }
+            outputProfile.WriteTag(SafeTagSignature.LuminanceTag, new CIEXYZ { Y = max_nits });
 
             // the profile is not read by regular applications
-            //var outctx = new IccContext(outputProfile);
-            //outctx.WriteIlluminantRelativeMediaBlackPoint(illuminantRelativeBlackPoint);
+            // var outctx = new IccContext(outputProfile);
+            // outctx.WriteIlluminantRelativeMediaBlackPoint(illuminantRelativeBlackPoint);
 
             // set output profile description
             outputProfile.HeaderManufacturer = profile.HeaderManufacturer;
