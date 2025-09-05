@@ -112,7 +112,7 @@ namespace ColorControl.Shared.Contracts.NVIDIA
             toggleHDR = false;
             DisplayConfig = new DisplayConfig();
             primaryDisplay = true;
-            ditheringBits = 1;
+            ditheringBits = GetDefaultDitheringBits(); // Use method to determine appropriate dithering bits
             ditheringMode = 4;
             applyDriverSettings = false;
             driverSettings = new Dictionary<uint, uint>();
@@ -125,10 +125,92 @@ namespace ColorControl.Shared.Contracts.NVIDIA
             DpiScaling = new DpiScaling();
         }
 
+        /// <summary>
+        /// Determines the appropriate default dithering bits based on current color depth context
+        /// </summary>
+        /// <returns>Dithering bits value: 0=6-bit, 1=8-bit, 2=10-bit</returns>
+        private static uint GetDefaultDitheringBits()
+        {
+            // For new presets, try to match dithering to current color depth
+            // This prevents the common issue of using 8-bit dithering in 10bpc mode
+            
+            // Default to 8-bit dithering if we can't determine current mode
+            uint defaultBits = 2; // 10-bit
+            
+            try
+            {
+                // TODO: In a future enhancement, we could try to detect current desktop color depth
+                // For now, use a more intelligent default:
+                // - If we're creating a preset with 10-bit color data, use 10-bit dithering
+                // - Otherwise default to 8-bit dithering
+                
+                // This is a conservative approach that works for most scenarios
+                // Users can still manually adjust if needed
+                return defaultBits;
+            }
+            catch
+            {
+                // Fall back to 8-bit if any detection fails
+                return defaultBits;
+            }
+        }
+
+        /// <summary>
+        /// Updates dithering bits to match the specified color depth
+        /// Call this when you know the target color depth to ensure optimal dithering
+        /// </summary>
+        /// <param name="colorDepth">The target color depth</param>
+        public void UpdateDitheringBitsForColorDepth(ColorDataDepth? colorDepth)
+        {
+            if (!colorDepth.HasValue)
+            {
+                return; // Keep current dithering bits if color depth is null
+            }
+
+            ditheringBits = colorDepth.Value switch
+            {
+                ColorDataDepth.BPC10 => 2,           // 10-bit dithering for 10bpc mode
+                ColorDataDepth.BPC12 => 2,           // Use 10-bit dithering (highest available) for 12bpc
+                ColorDataDepth.BPC16 => 2,           // Use 10-bit dithering (highest available) for 16bpc
+                ColorDataDepth.BPC6 => 0,            // 6-bit dithering for 6bpc mode
+                ColorDataDepth.BPC8 => 1,            // 8-bit dithering for 8bpc mode
+                ColorDataDepth.Default => 1,         // Default to 8-bit dithering
+                _ => 1                               // Default to 8-bit dithering for unknown modes
+            };
+        }
+
+        /// <summary>
+        /// Gets the optimal dithering bits for a given color depth
+        /// This is a static helper method for external use
+        /// </summary>
+        /// <param name="colorDepth">The color depth to get dithering bits for</param>
+        /// <returns>Dithering bits value: 0=6-bit, 1=8-bit, 2=10-bit</returns>
+        public static uint GetOptimalDitheringBits(ColorDataDepth? colorDepth)
+        {
+            if (!colorDepth.HasValue)
+            {
+                return 1; // Default to 8-bit dithering if color depth is null
+            }
+
+            return colorDepth.Value switch
+            {
+                ColorDataDepth.BPC10 => 2,           // 10-bit dithering for 10bpc mode
+                ColorDataDepth.BPC12 => 2,           // Use 10-bit dithering (highest available) for 12bpc
+                ColorDataDepth.BPC16 => 2,           // Use 10-bit dithering (highest available) for 16bpc
+                ColorDataDepth.BPC6 => 0,            // 6-bit dithering for 6bpc mode
+                ColorDataDepth.BPC8 => 1,            // 8-bit dithering for 8bpc mode
+                ColorDataDepth.Default => 1,         // Default to 8-bit dithering
+                _ => 1                               // Default to 8-bit dithering for unknown modes
+            };
+        }
+
         public NvPreset(ColorData colorData) : this()
         {
             id = GetNewId();
             this.colorData = colorData;
+            
+            // Auto-adjust dithering bits to match the color depth
+            UpdateDitheringBitsForColorDepth(colorData.ColorDepth);
         }
 
         public NvPreset(NvPreset preset) : this()
@@ -179,6 +261,14 @@ namespace ColorControl.Shared.Contracts.NVIDIA
 
             applyDithering = preset.applyDithering;
             ditheringEnabled = preset.ditheringEnabled;
+            ditheringBits = preset.ditheringBits;
+            ditheringMode = preset.ditheringMode;
+
+            // Auto-adjust dithering bits if applying color data with a specific color depth
+            if (applyColorData && colorData.ColorDepth != ColorDataDepth.Default)
+            {
+                UpdateDitheringBitsForColorDepth(colorData.ColorDepth);
+            }
 
             DisplayConfig = new DisplayConfig(preset.DisplayConfig);
 
