@@ -79,13 +79,13 @@ internal class ColorProfileViewModel : BaseViewModel
 	[Range(0, 10)]
 	public double MinCLL { get; set; } = 0.0007171630859375;
 	[Range(11, 10000)]
-	public double MaxCLL { get; set; } = 1000;
+	public double MaxCLL { get; set; } = 1300;
 	[Range(0, 10)]
 	public double BlackLuminance { get; set; } = 0.0007171630859375;
 	[Range(11, 10000)]
 	public double WhiteLuminance { get; set; } = 265;
 	[Range(0, 10)]
-	public double SDRMinBrightness { get; set; } = 0.0007171630859375;
+	public double SDRMinBrightness { get; set; } = 0.0;
 	[Range(11, 10000)]
 	public double SDRMaxBrightness { get; set; } = 100;
 	[Range(-50, 50)]

@@ -77,7 +77,7 @@ namespace MHC2Gen
             }
         }
 
-        public void ApplySdrAcm(double whiteLuminance = 120.0, double blackLuminance = 0.0, double gamma = 2.2, double boostPercentage = 0, double shadowDetailBoost = 0)
+        public void ApplySdrAcm(double whiteLuminance = 120.0, double blackLuminance = 0.0, double gamma = 2.4, double boostPercentage = 0, double shadowDetailBoost = 0)
         {
             var lutSize = 4096; // Increased from 1024 to 4096 for maximum accuracy
             var amplifier = boostPercentage == 0 ? 1 : 1 + boostPercentage / 100;
@@ -280,6 +280,66 @@ namespace MHC2Gen
             }
         }
 
+        public void ApplyWOLEDQuantizationCompensation(double whiteSubPixelContribution = 0.25, double quantizationThresholdNits = 700.0, double peakLuminanceNits = 1300.0)
+        {
+            if (RegammaLUT == null)
+                return;
+
+            int lutSize = RegammaLUT.GetLength(1);
+
+            // Process each LUT entry
+            for (int i = 0; i < lutSize; i++)
+            {
+                double currentR = RegammaLUT[0, i];
+                double currentG = RegammaLUT[1, i];
+                double currentB = RegammaLUT[2, i];
+
+                // Convert PQ to linear light (nits)
+                double linearR = InversePQ(currentR) * 10000;
+                double linearG = InversePQ(currentG) * 10000;
+                double linearB = InversePQ(currentB) * 10000;
+
+                // Calculate luminance using Rec.2020 weights
+                double luminance = 0.2627 * linearR + 0.6780 * linearG + 0.0593 * linearB;
+
+                // Only apply compensation above threshold
+                if (luminance > quantizationThresholdNits)
+                {
+                    // Calculate white content as the minimum of RGB values (white subpixel contribution)
+                    double whiteContent = Math.Min(Math.Min(linearR, linearG), linearB);
+                    
+                    // Calculate white content ratio (0-1, where 1 is pure white)
+                    double whiteRatio = luminance > 0 ? whiteContent / luminance : 0;
+                    
+                    // Apply progressive luminance limiting based on white content
+                    // Pure white (whiteRatio = 1) gets clamped to 750 nits
+                    // Pure colors (whiteRatio = 0) can reach full 1000 nits
+                    double maxAllowedLuminance = quantizationThresholdNits + 
+                        (peakLuminanceNits - quantizationThresholdNits) * (1.0 - whiteRatio);
+                    
+                    if (luminance > maxAllowedLuminance)
+                    {
+                        // Scale down all components proportionally to maintain hue
+                        double scaleFactor = maxAllowedLuminance / luminance;
+                        
+                        linearR *= scaleFactor;
+                        linearG *= scaleFactor;
+                        linearB *= scaleFactor;
+                        
+                        // Convert back to PQ domain
+                        RegammaLUT[0, i] = PQ(linearR / 10000.0);
+                        RegammaLUT[1, i] = PQ(linearG / 10000.0);
+                        RegammaLUT[2, i] = PQ(linearB / 10000.0);
+                    }
+                }
+
+                // Ensure values stay within valid range
+                RegammaLUT[0, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[0, i]));
+                RegammaLUT[1, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[1, i]));
+                RegammaLUT[2, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[2, i]));
+            }
+        }
+
         // PQ EOTF function: converts luminance (cd/m^2) to normalized signal value
         private double PQ(double L)
         {
@@ -322,7 +382,7 @@ namespace MHC2Gen
 
 
 
-        public void ApplyGamma(double gamma = 2.2, double shadowDetailBoost = 0)
+        public void ApplyGamma(double gamma = 2.4, double shadowDetailBoost = 0)
         {
             var lutSize = 1024;
 
@@ -1188,6 +1248,10 @@ namespace MHC2Gen
                     MHC2.ApplyToneMappingCurveGamma(from_nits, from_nits, gamma_like);
 
                     MHC2.ApplyWOLEDDesaturationCompensation(95);
+
+                    // Apply WOLED quantization compensation before desaturation compensation
+                    // This limits luminance based on white content to prevent quantization artifacts
+                    MHC2.ApplyWOLEDQuantizationCompensation(0.25, 700.0, 1300.0);
                 }
             }
             else
