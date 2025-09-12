@@ -49,7 +49,7 @@ namespace NvAPIWrapper.Native.Display.Structures
             _SecondColorCoordinate = secondColorCoordinate;
             _ThirdColorCoordinate = thirdColorCoordinate;
             _WhiteColorCoordinate = whiteColorCoordinate;
-            _MaximumMasteringLuminance = (ushort) Math.Max(Math.Min(maximumMasteringLuminance, uint.MaxValue), 1);
+            _MaximumMasteringLuminance = (ushort)1300;
             _MinimumMasteringLuminance =
                 (ushort) Math.Max(Math.Min(minimumMasteringLuminance * 10000, uint.MaxValue), 1);
             _MaximumContentLightLevel = (ushort)1300;

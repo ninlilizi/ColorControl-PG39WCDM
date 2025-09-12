@@ -48,9 +48,9 @@ public class ColorProfileDto
 			IsHDRProfile = isHdrProfile,
 			HasExtraInfo = true,
 			MinCLL = 0,
-			MaxCLL = 1000,
+			MaxCLL = 1300,
 			BlackLuminance = 0,
-			WhiteLuminance = 1000,
+			WhiteLuminance = 1300,
 			SDRMinBrightness = 0,
 			SDRMaxBrightness = 100,
 			SDRTransferFunction = isHdrProfile ? SDRTransferFunction.Piecewise : SDRTransferFunction.PurePower

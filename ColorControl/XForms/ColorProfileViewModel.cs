@@ -111,9 +111,9 @@ internal class ColorProfileViewModel : BaseViewModel
 	public bool PrimariesEnabled { get; set; } = true;
 
 	[Range(400, 10000)]
-	public double ToneMappingFromLuminance { get; set; } = 1000;
+	public double ToneMappingFromLuminance { get; set; } = 1300;
 	[Range(400, 10000)]
-	public double ToneMappingToLuminance { get; set; } = 1000;
+	public double ToneMappingToLuminance { get; set; } = 1300;
 
 
 	public bool ToneMappingSettingsEnabled { get; set; }
