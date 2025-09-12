@@ -165,7 +165,7 @@ namespace MHC2Gen
             double difference = L_target_prime;
 
             const double displayBlackLevelNits = 0.0007171630859375;
-            const double toeThresholdNits = 2.25;
+            const double toeThresholdNits = 1.5;
             double blackLevelPQ = PQ(displayBlackLevelNits / 10000.0);
             double toeInputSignalPQ = PQ(toeThresholdNits / 10000.0);
 
