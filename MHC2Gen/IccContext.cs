@@ -160,50 +160,51 @@ namespace MHC2Gen
                 RegammaLUT = new double[3, lutSize];
             }
 
-            double L_target = (1 * (PQ((curve_like) / 10000.0) / PQ((maxInputNits) / 10000.0)));
-            double L_target_prime = 1 * (PQ((curve_like) / 10000) / PQ((maxOutputNits) / 10000.0));
+            double L_target = (PQ(curve_like / 10000.0) / PQ(maxInputNits / 10000.0));
+            double L_target_prime = (PQ(curve_like / 10000.0) / PQ(maxOutputNits / 10000.0));
             double difference = L_target_prime;
-            
-            // Define toe correction parameters
-            const double displayBlackLevelNits = 0.0007171630859375; // Display's actual black level
-            const double toeThresholdNits = 1.0;
+
+            const double displayBlackLevelNits = 0.0007171630859375;
+            const double toeThresholdNits = 1.5;
             double blackLevelPQ = PQ(displayBlackLevelNits / 10000.0);
-            double thresholdPQ = PQ(toeThresholdNits / 10000.0);
-            
+            double toeInputSignalPQ = PQ(toeThresholdNits / 10000.0);
+
+            double toeInputSignalPQConverted = toeInputSignalPQ * difference;
+            double toeLuminanceAfterGamma = InversePQ(toeInputSignalPQConverted) * 10000 * (maxInputNits / curve_like);
+            double toeMappedPQ = PQ(toeLuminanceAfterGamma / 10000.0);
+
+            double toeSpan = toeThresholdNits - displayBlackLevelNits;
+            if (toeSpan <= 0) return; // safety
+
             for (int i = 0; i < lutSize; i++)
             {
-                double N = lutExist ? RegammaLUT[0, i] : (double)i / (lutSize - 1);
-                double N_converted = N * difference;
-                double L = InversePQ(N_converted) * 10000 * (maxInputNits / curve_like);
+                double N_in = lutExist ? RegammaLUT[0, i] : (double)i / (lutSize - 1); // existing or identity
+                double L_in = InversePQ(N_in) * 10000.0;
 
-                double N_prime = PQ(L / 10000);
-                
-                // Only apply toe correction for dark values (0.0007-1.0 nits)
-                if (N <= thresholdPQ)
+                double N_prime;
+
+                if (L_in <= displayBlackLevelNits)
                 {
-                    double actualLuminance = InversePQ(N) * 10000;
-                    
-                    if (actualLuminance >= displayBlackLevelNits && actualLuminance <= toeThresholdNits)
-                    {
-                        double toePosition = (actualLuminance - displayBlackLevelNits) / (toeThresholdNits - displayBlackLevelNits);
-
-                        double mappingCurve = Math.Pow(toePosition, 0.9);
-
-                        double N_threshold = thresholdPQ * difference;
-                        double L_threshold = InversePQ(N_threshold) * 10000 * (maxInputNits / curve_like);
-                        double N_prime_threshold = PQ(L_threshold / 10000);
-
-                        double targetAtThreshold = N_prime_threshold;
-                        N_prime = blackLevelPQ + (targetAtThreshold - blackLevelPQ) * mappingCurve;
-                    }
-                    else if (actualLuminance < displayBlackLevelNits)
-                    {
-                        N_prime = blackLevelPQ;
-                    }
+                    N_prime = blackLevelPQ;
+                }
+                else if (L_in <= toeThresholdNits)
+                {
+                    // Linear expansion from blackLevelPQ -> toeMappedPQ over 0.0007 .. 10 nits (no compression)
+                    double t = (L_in - displayBlackLevelNits) / toeSpan; // 0..1
+                    t = Math.Clamp(t, 0.0, 1.0);
+                    N_prime = blackLevelPQ + t * (toeMappedPQ - blackLevelPQ);
+                }
+                else
+                {
+                    // Above toe: apply original gamma-style mapping (scaled domain)
+                    double N_converted = N_in * difference;
+                    double L_scaled = InversePQ(N_converted) * 10000 * (maxInputNits / curve_like);
+                    N_prime = PQ(L_scaled / 10000.0);
                 }
 
-                N_prime = Math.Max(0.0, Math.Min(1.0, N_prime));
-                
+                // Clamp output
+                N_prime = Math.Clamp(N_prime, 0.0, 1.0);
+
                 for (int c = 0; c < 3; c++)
                 {
                     RegammaLUT[c, i] = N_prime;
@@ -280,60 +281,57 @@ namespace MHC2Gen
             }
         }
 
-        public void ApplyWOLEDQuantizationCompensation(double whiteSubPixelContribution = 0.25, double quantizationThresholdNits = 700.0, double peakLuminanceNits = 1300.0)
+        public void ApplyWOLEDQuantizationCompensation(double whiteSubPixelContribution = 0.25, double quantizationThresholdNits = 1000.0, double peakLuminanceNits = 1300.0)
         {
             if (RegammaLUT == null)
                 return;
 
             int lutSize = RegammaLUT.GetLength(1);
 
-            // Process each LUT entry
             for (int i = 0; i < lutSize; i++)
             {
                 double currentR = RegammaLUT[0, i];
                 double currentG = RegammaLUT[1, i];
                 double currentB = RegammaLUT[2, i];
 
-                // Convert PQ to linear light (nits)
                 double linearR = InversePQ(currentR) * 10000;
                 double linearG = InversePQ(currentG) * 10000;
                 double linearB = InversePQ(currentB) * 10000;
 
-                // Calculate luminance using Rec.2020 weights
                 double luminance = 0.2627 * linearR + 0.6780 * linearG + 0.0593 * linearB;
 
-                // Only apply compensation above threshold
                 if (luminance > quantizationThresholdNits)
                 {
-                    // Calculate white content as the minimum of RGB values (white subpixel contribution)
-                    double whiteContent = Math.Min(Math.Min(linearR, linearG), linearB);
-                    
-                    // Calculate white content ratio (0-1, where 1 is pure white)
-                    double whiteRatio = luminance > 0 ? whiteContent / luminance : 0;
-                    
-                    // Apply progressive luminance limiting based on white content
-                    // Pure white (whiteRatio = 1) gets clamped to 750 nits
-                    // Pure colors (whiteRatio = 0) can reach full 1000 nits
-                    double maxAllowedLuminance = quantizationThresholdNits + 
-                        (peakLuminanceNits - quantizationThresholdNits) * (1.0 - whiteRatio);
-                    
+                    double avg = (linearR + linearG + linearB) / 3.0;
+
+                    double deviation = 0.0;
+                    if (avg > 1e-6)
+                    {
+                        deviation = (Math.Abs(linearR - avg) + Math.Abs(linearG - avg) + Math.Abs(linearB - avg)) / (3.0 * avg);
+                    }
+
+                    double whiteRatio = Math.Clamp(1.0 - deviation, 0.0, 1.0);
+
+                    // 4. Optionally blend with luminance weighting (more conservative near threshold)
+                    //    (can be tuned: higher exponent tightens neutrality requirement)
+                    whiteRatio = Math.Pow(whiteRatio, 1.0); // exponent left as 1.0 for now
+
+                    double maxAllowedLuminance = quantizationThresholdNits +
+                        (peakLuminanceNits - quantizationThresholdNits) * (1.0 - whiteRatio * whiteSubPixelContribution);
+
                     if (luminance > maxAllowedLuminance)
                     {
-                        // Scale down all components proportionally to maintain hue
                         double scaleFactor = maxAllowedLuminance / luminance;
-                        
                         linearR *= scaleFactor;
                         linearG *= scaleFactor;
                         linearB *= scaleFactor;
-                        
-                        // Convert back to PQ domain
+
                         RegammaLUT[0, i] = PQ(linearR / 10000.0);
                         RegammaLUT[1, i] = PQ(linearG / 10000.0);
                         RegammaLUT[2, i] = PQ(linearB / 10000.0);
                     }
                 }
 
-                // Ensure values stay within valid range
                 RegammaLUT[0, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[0, i]));
                 RegammaLUT[1, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[1, i]));
                 RegammaLUT[2, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[2, i]));
@@ -837,8 +835,6 @@ namespace MHC2Gen
 
             // hack: eliminate fixed sRGB to XYZ transform
 
-            user_matrix = srgb_to_xyz * user_matrix;
-
             var mhc2_matrix = new double[,] {
                { user_matrix[0,0], user_matrix[0,1], user_matrix[0,2], 0 },
                { user_matrix[1,0], user_matrix[1,1], user_matrix[1,2], 0 },
@@ -878,7 +874,7 @@ namespace MHC2Gen
             var mhc2d = new MHC2Tag
             {
                 MinCLL = min_nits,
-                MaxCLL = profile_max_nits,
+                MaxCLL = max_nits,
                 Matrix3x4 = mhc2_matrix,
                 RegammaLUT = mhc2_lut
             };
@@ -1247,11 +1243,9 @@ namespace MHC2Gen
                     MHC2.ApplyToneMappingCurve(from_nits, from_nits, curve_like);
                     MHC2.ApplyToneMappingCurveGamma(from_nits, from_nits, gamma_like);
 
-                    MHC2.ApplyWOLEDDesaturationCompensation(95);
-
-                    // Apply WOLED quantization compensation before desaturation compensation
-                    // This limits luminance based on white content to prevent quantization artifacts
                     MHC2.ApplyWOLEDQuantizationCompensation(0.25, 700.0, 1300.0);
+
+                    MHC2.ApplyWOLEDDesaturationCompensation(95);
                 }
             }
             else
@@ -1389,8 +1383,6 @@ namespace MHC2Gen
 
             // hack: eliminate fixed sRGB to XYZ transform
 
-            user_matrix = srgb_to_xyz * user_matrix;
-
             var mhc2_matrix = new double[,] {
                { user_matrix[0,0], user_matrix[0,1], user_matrix[0,2], 0 },
                { user_matrix[1,0], user_matrix[1,1], user_matrix[1,2], 0 },
@@ -1443,7 +1435,7 @@ namespace MHC2Gen
             var mhc2d = new MHC2Tag
             {
                 MinCLL = min_nits,
-                MaxCLL = profile_max_nits,
+                MaxCLL = max_nits,
                 Matrix3x4 = mhc2_matrix,
                 RegammaLUT = mhc2_lut
             };
