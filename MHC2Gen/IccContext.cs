@@ -1243,7 +1243,7 @@ namespace MHC2Gen
                     MHC2.ApplyToneMappingCurve(from_nits, from_nits, curve_like);
                     MHC2.ApplyToneMappingCurveGamma(from_nits, from_nits, gamma_like);
 
-                    MHC2.ApplyWOLEDQuantizationCompensation(0.25, 700.0, 1300.0);
+                    MHC2.ApplyWOLEDQuantizationCompensation(0.25, 1000.0, 1300.0);
 
                     MHC2.ApplyWOLEDDesaturationCompensation(95);
                 }
