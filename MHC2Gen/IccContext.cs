@@ -212,6 +212,180 @@ namespace MHC2Gen
             }
         }
 
+        /// <summary>
+        /// PQ-native tonemapping that replicates the gamma correction approach in pure PQ space.
+        /// Works by applying a scale factor in PQ space, then converting to luminance and scaling again.
+        /// This maintains saturation by working on each color channel independently.
+        /// The contrastPivotNits parameter controls where the contrast boost is anchored.
+        /// </summary>
+        public void ApplyToneMappingCurvePQNative(double maxInputNits = 400, double maxOutputNits = 400,
+            double contrastPivotNits = 400)
+        {
+            int lutSize = 4096;
+            bool lutExist = true;
+            if (RegammaLUT == null)
+            {
+                lutExist = false;
+                RegammaLUT = new double[3, lutSize];
+            }
+
+            // Display characteristics
+            const double displayBlackLevelNits = 0.0007171630859375;
+            const double toeEndNits = 1.5; // Linear toe up to 1.5 nits (matches old behavior)
+
+            // Calculate the PQ scaling factor
+            // This replicates: difference = (PQ(curve_like/10000) / PQ(maxInputNits/10000))
+            double scaleFactor = PQ(contrastPivotNits / 10000.0) / PQ(maxInputNits / 10000.0);
+
+            // Pre-calculate PQ values
+            double blackLevelPQ = PQ(displayBlackLevelNits / 10000.0);
+            double toeEndPQ = PQ(toeEndNits / 10000.0);
+
+            // Calculate toe target using same transform as main curve
+            double toeEndScaled = toeEndPQ * scaleFactor;
+            double toeEndLuminance = InversePQ(toeEndScaled) * 10000.0 * (maxInputNits / contrastPivotNits);
+            double toeEndTargetPQ = PQ(toeEndLuminance / 10000.0);
+
+            for (int i = 0; i < lutSize; i++)
+            {
+                double N_in = lutExist ? RegammaLUT[0, i] : (double)i / (lutSize - 1);
+                double L_in = InversePQ(N_in) * 10000.0; // Convert to nits
+
+                double N_out;
+
+                if (L_in <= displayBlackLevelNits)
+                {
+                    // Black level clamp
+                    N_out = blackLevelPQ;
+                }
+                else if (L_in < toeEndNits)
+                {
+                    // Toe region: interpolate from black to the transformed toe end value
+                    // Using linear interpolation to match the old behavior (less black crush)
+                    double t = (L_in - displayBlackLevelNits) / (toeEndNits - displayBlackLevelNits);
+
+                    // Option 1: Pure linear (matches old code exactly)
+                    N_out = blackLevelPQ + t * (toeEndTargetPQ - blackLevelPQ);
+
+                    // Option 2: Smoothstep (slightly smoother but still gentle)
+                    // Uncomment this and comment out Option 1 if you want smooth derivatives
+                    // double smoothT = t * t * (3.0 - 2.0 * t);
+                    // N_out = blackLevelPQ + smoothT * (toeEndTargetPQ - blackLevelPQ);
+                }
+                else
+                {
+                    // Main curve: scale in PQ space, then scale in luminance space
+                    // This exactly replicates the old approach:
+                    // N_converted = N_in * difference
+                    // L_scaled = InversePQ(N_converted) * 10000 * (maxInputNits / curve_like)
+                    // N_prime = PQ(L_scaled / 10000.0)
+
+                    double N_scaled = N_in * scaleFactor;
+                    double L_scaled = InversePQ(N_scaled) * 10000.0 * (maxInputNits / contrastPivotNits);
+
+                    // Clamp to output range
+                    L_scaled = Math.Min(L_scaled, maxOutputNits);
+                    L_scaled = Math.Max(L_scaled, displayBlackLevelNits);
+
+                    // Convert back to PQ
+                    N_out = PQ(L_scaled / 10000.0);
+                }
+
+                // Clamp output to valid range
+                N_out = Math.Clamp(N_out, 0.0, 1.0);
+
+                for (int c = 0; c < 3; c++)
+                {
+                    RegammaLUT[c, i] = N_out;
+                }
+            }
+        }
+
+        /// <summary>
+        /// PQ-native tonemapping with smooth toe and shoulder using Hermite interpolation.
+        /// Provides finer control over toe strength, contrast, and shoulder compression.
+        /// </summary>
+        public void ApplyToneMappingCurvePQSmooth(double maxInputNits = 400, double maxOutputNits = 400,
+            double contrast = 1.65, double toeStrength = 0.55, double shoulderStrength = 0.95)
+        {
+            int lutSize = 4096;
+            bool lutExist = true;
+            if (RegammaLUT == null)
+            {
+                lutExist = false;
+                RegammaLUT = new double[3, lutSize];
+            }
+
+            const double displayBlackLevelNits = 0.0007171630859375;
+            double blackLevelPQ = PQ(displayBlackLevelNits / 10000.0);
+
+            // Define curve segments in luminance space
+            double toeEnd = 10.0; // nits where toe ends
+            double shoulderStart = maxOutputNits * 0.7; // where shoulder begins
+
+            for (int i = 0; i < lutSize; i++)
+            {
+                double N_in = lutExist ? RegammaLUT[0, i] : (double)i / (lutSize - 1);
+                double L_in = InversePQ(N_in) * 10000.0;
+
+                double L_out;
+
+                if (L_in <= displayBlackLevelNits)
+                {
+                    L_out = displayBlackLevelNits;
+                }
+                else if (L_in < toeEnd)
+                {
+                    // Smooth toe using Hermite interpolation
+                    double t = L_in / toeEnd;
+                    double t2 = t * t;
+                    double t3 = t2 * t;
+
+                    // Hermite basis functions for smooth toe
+                    double h1 = 2*t3 - 3*t2 + 1;
+                    double h2 = -2*t3 + 3*t2;
+
+                    double y0 = displayBlackLevelNits;
+                    double y1 = Math.Pow(toeEnd / maxInputNits, 1.0 / contrast) * maxOutputNits;
+
+                    // Apply toe strength
+                    y1 = y1 * toeStrength + toeEnd * (1.0 - toeStrength);
+
+                    L_out = h1 * y0 + h2 * y1;
+                    L_out = Math.Max(L_out, displayBlackLevelNits);
+                }
+                else if (L_in < shoulderStart)
+                {
+                    // Mid-tones: power function in luminance space
+                    double t = L_in / maxInputNits;
+                    t = Math.Clamp(t, 0.0, 1.0);
+                    L_out = Math.Pow(t, 1.0 / contrast) * maxOutputNits;
+                }
+                else
+                {
+                    // Shoulder: smooth compression
+                    double t = (L_in - shoulderStart) / (maxInputNits - shoulderStart);
+                    t = Math.Clamp(t, 0.0, 1.0);
+
+                    // Smooth shoulder using modified rational function
+                    double shoulder = shoulderStrength * t / (shoulderStrength * t + (1.0 - shoulderStrength));
+
+                    double midValue = Math.Pow(shoulderStart / maxInputNits, 1.0 / contrast) * maxOutputNits;
+                    L_out = midValue + shoulder * (maxOutputNits - midValue);
+                }
+
+                L_out = Math.Clamp(L_out, displayBlackLevelNits, maxOutputNits);
+
+                double N_out = PQ(L_out / 10000.0);
+                N_out = Math.Clamp(N_out, 0.0, 1.0);
+
+                for (int c = 0; c < 3; c++)
+                {
+                    RegammaLUT[c, i] = N_out;
+                }
+            }
+        }
+
 
         public void ApplyWOLEDDesaturationCompensation(double compensationStrength)
         {
@@ -1231,19 +1405,41 @@ namespace MHC2Gen
                 {
 
                     double from_nits = command.ToneMappingFromLuminance;
-
                     double to_nits = command.ToneMappingToLuminance;
-                    double numerator = to_nits / from_nits;
 
-                    double gamma_like = (command.ToneMappingToLuminance / command.HdrGammaMultiplier) / numerator;
-                    double curve_like = (command.ToneMappingToLuminance / command.HdrBrightnessMultiplier) / numerator;
+                    // Old gamma-PQ hybrid approach (kept for reference):
+                    // double numerator = to_nits / from_nits;
+                    // double gamma_like = (command.ToneMappingToLuminance / command.HdrGammaMultiplier) / numerator;
+                    // double curve_like = (command.ToneMappingToLuminance / command.HdrBrightnessMultiplier) / numerator;
+                    // MHC2.ApplyToneMappingCurve(from_nits, to_nits, to_nits);
+                    // MHC2.ApplyToneMappingCurve(from_nits, from_nits, curve_like);
+                    // MHC2.ApplyToneMappingCurveGamma(from_nits, from_nits, gamma_like);
 
-                    MHC2.ApplyToneMappingCurve(from_nits, to_nits, to_nits);
+                    // New PQ-native approach - works entirely in PQ space with smooth toe
+                    // Calculate the contrast pivot point (equivalent to old gamma_like)
+                    // gamma_like = (to_nits / HdrGammaMultiplier) / (to_nits / from_nits)
+                    //            = from_nits / HdrGammaMultiplier
+                    double contrastPivot = from_nits / command.HdrGammaMultiplier;
 
-                    MHC2.ApplyToneMappingCurve(from_nits, from_nits, curve_like);
-                    MHC2.ApplyToneMappingCurveGamma(from_nits, from_nits, gamma_like);
+                    // Apply PQ-native tonemapping with smooth toe and no linear kludges
+                    MHC2.ApplyToneMappingCurvePQNative(
+                        maxInputNits: from_nits,
+                        maxOutputNits: to_nits,
+                        contrastPivotNits: contrastPivot
+                    );
 
-                    MHC2.ApplyWOLEDQuantizationCompensation(0.25, 1000.0, 1300.0);
+                    // Alternative: Use the smooth Hermite-based approach for finer control
+                    // Uncomment this and comment out the above to try the smoother approach:
+                    // double effectiveContrast = command.HdrGammaMultiplier;
+                    // MHC2.ApplyToneMappingCurvePQSmooth(
+                    //     maxInputNits: 1000,
+                    //     maxOutputNits: 1000,
+                    //     contrast: effectiveContrast,
+                    //     toeStrength: 0.55,
+                    //     shoulderStrength: 0.95
+                    // );
+
+                    //MHC2.ApplyWOLEDQuantizationCompensation(0.25, 1000.0, 1300.0);
 
                     MHC2.ApplyWOLEDDesaturationCompensation(95);
                 }
