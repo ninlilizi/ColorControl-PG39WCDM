@@ -8,6 +8,7 @@
 * Customized gamma curve to mitigate the displays effective gamma being closer to 1.8 than the expected 2.2.
 * Output custom .cube 3D LUTs with maximum number of steps to allow color accurate correction in professional softwares.
 
+* For best results in your Nvidia control panel set Brightness to 60%, Digital Vibrance to 53%.
 
 # ColorControl
 Easily change NVIDIA and AMD display settings, control LG and Samsung tv's, Game launcher and color profile management
