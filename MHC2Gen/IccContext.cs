@@ -234,8 +234,9 @@ namespace MHC2Gen
             const double toeEndNits = 1.5; // Linear toe up to 1.5 nits (matches old behavior)
 
             // Calculate the PQ scaling factor
-            // This replicates: difference = (PQ(curve_like/10000) / PQ(maxInputNits/10000))
-            double scaleFactor = PQ(contrastPivotNits / 10000.0) / PQ(maxInputNits / 10000.0);
+            // This replicates: difference = (PQ(gamma_like/10000) / PQ(maxOutputNits/10000))
+            // Note: denominator uses maxOutputNits (not maxInputNits) - critical for correct slope!
+            double scaleFactor = PQ(contrastPivotNits / 10000.0) / PQ(maxOutputNits / 10000.0);
 
             // Pre-calculate PQ values
             double blackLevelPQ = PQ(displayBlackLevelNits / 10000.0);
