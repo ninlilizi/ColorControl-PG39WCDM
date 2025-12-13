@@ -1267,33 +1267,12 @@ namespace MHC2Gen
                 });
                 user_matrix = saturation_matrix * user_matrix;
 
-                // Apply contrast adjustment around pivot point (no brightness change)
-                // Contrast > 1.0 increases, < 1.0 decreases, 1.0 = no change
-                // Formula: output = (input - pivot) * contrast + pivot
-                //                 = input * contrast + pivot * (1 - contrast)
-                const double contrast = 2.0;
-                const double contrastPivot = 0.5; // Mid-gray pivot
-                double contrastOffset = contrastPivot * (1.0 - contrast);
-
-                for (int row = 0; row < 3; row++)
-                {
-                    for (int col = 0; col < 3; col++)
-                    {
-                        user_matrix[row, col] *= contrast;
-                    }
-                }
-
             }
 
-            // Calculate contrast offset for 4th column (applied after matrix multiply)
-            const double contrastForOffset = 2.0; // Must match contrast value above
-            const double pivotForOffset = 0.5;
-            double offsetValue = pivotForOffset * (1.0 - contrastForOffset);
-
             var mhc2_matrix = new double[,] {
-               { user_matrix[0,0], user_matrix[0,1], user_matrix[0,2], offsetValue },
-               { user_matrix[1,0], user_matrix[1,1], user_matrix[1,2], offsetValue },
-               { user_matrix[2,0], user_matrix[2,1], user_matrix[2,2], offsetValue },
+               { user_matrix[0,0], user_matrix[0,1], user_matrix[0,2], 0 },
+               { user_matrix[1,0], user_matrix[1,1], user_matrix[1,2], 0 },
+               { user_matrix[2,0], user_matrix[2,1], user_matrix[2,2], 0 },
             };
 
             MHC2 = new MHC2Tag
@@ -1336,7 +1315,7 @@ namespace MHC2Gen
                     //            = from_nits / HdrGammaMultiplier
                     double contrastPivot = from_nits / command.HdrGammaMultiplier;
 
-                    // Apply PQ-native tonemapping with smooth toe and no linear kludges
+                    // Apply PQ-native tonemapping (pure PQ curve, no contrast/brightness adjustments)
                     MHC2.ApplyToneMappingCurvePQNative(
                         maxInputNits: from_nits,
                         maxOutputNits: to_nits,

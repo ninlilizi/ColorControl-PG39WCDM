@@ -71,7 +71,7 @@ internal class ColorProfileViewModel : BaseViewModel
 	public Dictionary<DisplayPrimariesSource, string> PrimariesSources { get; } = Utils.EnumToDictionary<DisplayPrimariesSource>();
 	public DisplayPrimariesSource PrimariesSource { get; set; } = DisplayPrimariesSource.EDID;
 	public Dictionary<ColorGamut, string> ColorGamuts { get; } = Utils.EnumToDictionary<ColorGamut>();
-	public ColorGamut ColorGamut { get; set; } = ColorGamut.Rec2020;
+	public ColorGamut ColorGamut { get; set; } = ColorGamut.Native;
 	public Dictionary<SDRTransferFunction, string> SDRTransferFunctions { get; } = Utils.EnumToDictionary<SDRTransferFunction>();
 	public SDRTransferFunction SDRTransferFunction { get; set; } = SDRTransferFunction.ToneMappedPiecewise;
 	[Range(0.1, 10)]
@@ -111,7 +111,7 @@ internal class ColorProfileViewModel : BaseViewModel
 	public bool PrimariesEnabled { get; set; } = true;
 
 	[Range(400, 10000)]
-	public double ToneMappingFromLuminance { get; set; } = 1300;
+	public double ToneMappingFromLuminance { get; set; } = 1000;
 	[Range(400, 10000)]
 	public double ToneMappingToLuminance { get; set; } = 1300;
 
@@ -121,7 +121,7 @@ internal class ColorProfileViewModel : BaseViewModel
 	public bool BrightnessBoostSettingsEnabled { get; set; }
 
 	[Range(.04, 25)]
-	public double HdrBrightnessMultiplier { get; set; } = 1;
+	public double HdrBrightnessMultiplier { get; set; } = 1.0;
 
 	[Range(.04, 25)]
 	public double HdrGammaMultiplier { get; set; } = 0.1;
