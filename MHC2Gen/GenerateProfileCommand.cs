@@ -7,7 +7,7 @@ public class GenerateProfileCommand
     public string Description { get; set; } = "";
     public bool HasExtraInfo { get; set; }
     public bool IsHDRProfile { get; set; }
-    public RgbPrimaries DevicePrimaries { get; set; } = new RgbPrimaries(RgbPrimaries.P3D65);
+    public RgbPrimaries DevicePrimaries { get; set; } = new RgbPrimaries(RgbPrimaries.sRGB);
     public SDRTransferFunction SDRTransferFunction { get; set; }
     public ColorGamut ColorGamut { get; set; }
     public double MinCLL { get; set; }

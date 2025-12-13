@@ -142,7 +142,7 @@ public class MHC2Wrapper
             SDRTransferFunction = deviceContext.ExtraInfoTag?.SDRTransferFunction ?? SDRTransferFunction.ToneMappedPiecewise,
             SDRBrightnessBoost = deviceContext.ExtraInfoTag?.SDRBrightnessBoost ?? 0,
             ShadowDetailBoost = deviceContext.ExtraInfoTag?.ShadowDetailBoost ?? 0,
-            Gamma = deviceContext.ExtraInfoTag?.Gamma ?? 2.2,
+            Gamma = deviceContext.ExtraInfoTag?.Gamma ?? 2.4,
             ToneMappingFromLuminance = deviceContext.ExtraInfoTag?.ToneMappingFromLuminance ?? 400,
             ToneMappingToLuminance = deviceContext.ExtraInfoTag?.ToneMappingToLuminance ?? 400,
             HdrGammaMultiplier = deviceContext.ExtraInfoTag?.HdrGammaMultiplier ?? 1,

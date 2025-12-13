@@ -71,7 +71,7 @@ internal class ColorProfileViewModel : BaseViewModel
 	public Dictionary<DisplayPrimariesSource, string> PrimariesSources { get; } = Utils.EnumToDictionary<DisplayPrimariesSource>();
 	public DisplayPrimariesSource PrimariesSource { get; set; } = DisplayPrimariesSource.EDID;
 	public Dictionary<ColorGamut, string> ColorGamuts { get; } = Utils.EnumToDictionary<ColorGamut>();
-	public ColorGamut ColorGamut { get; set; } = ColorGamut.Native;
+	public ColorGamut ColorGamut { get; set; } = ColorGamut.Rec2020;
 	public Dictionary<SDRTransferFunction, string> SDRTransferFunctions { get; } = Utils.EnumToDictionary<SDRTransferFunction>();
 	public SDRTransferFunction SDRTransferFunction { get; set; } = SDRTransferFunction.ToneMappedPiecewise;
 	[Range(0.1, 10)]
@@ -85,7 +85,7 @@ internal class ColorProfileViewModel : BaseViewModel
 	[Range(11, 10000)]
 	public double WhiteLuminance { get; set; } = 265;
 	[Range(0, 10)]
-	public double SDRMinBrightness { get; set; } = 0.0;
+	public double SDRMinBrightness { get; set; } = 0.0007171630859375;
 	[Range(11, 10000)]
 	public double SDRMaxBrightness { get; set; } = 100;
 	[Range(-50, 50)]
@@ -124,10 +124,10 @@ internal class ColorProfileViewModel : BaseViewModel
 	public double HdrBrightnessMultiplier { get; set; } = 1;
 
 	[Range(.04, 25)]
-	public double HdrGammaMultiplier { get; set; } = 0.14;
+	public double HdrGammaMultiplier { get; set; } = 0.24;
 
 	[Range(0, 100)]
-	public double WOLEDDesaturationCompensation { get; set; } = 0;
+	public double WOLEDDesaturationCompensation { get; set; } = 95;
 
 	public bool GenerateCubeLut { get; set; } = true;
 

@@ -231,7 +231,12 @@ namespace MHC2Gen
 
             // Display characteristics
             const double displayBlackLevelNits = 0.0007171630859375;
-            const double toeEndNits = 1.5; // Linear toe up to 1.5 nits (matches old behavior)
+            const double toeEndNits = 1.0; // Where toe curve ends
+            const double toeBlendEndNits = 2.0; // Where blending to main curve completes
+            const double toeGamma = 1.0; // <1 lifts shadows, >1 crushes them (1.0 = linear)
+
+            // Shoulder region: start compressing at 70% of max output, fully compress by max input
+            double shoulderStartNits = maxOutputNits * 0.7;
 
             // Calculate the PQ scaling factor
             // This replicates: difference = (PQ(gamma_like/10000) / PQ(maxOutputNits/10000))
@@ -259,37 +264,47 @@ namespace MHC2Gen
                     // Black level clamp
                     N_out = blackLevelPQ;
                 }
-                else if (L_in < toeEndNits)
-                {
-                    // Toe region: interpolate from black to the transformed toe end value
-                    // Using linear interpolation to match the old behavior (less black crush)
-                    double t = (L_in - displayBlackLevelNits) / (toeEndNits - displayBlackLevelNits);
-
-                    // Option 1: Pure linear (matches old code exactly)
-                    N_out = blackLevelPQ + t * (toeEndTargetPQ - blackLevelPQ);
-
-                    // Option 2: Smoothstep (slightly smoother but still gentle)
-                    // Uncomment this and comment out Option 1 if you want smooth derivatives
-                    // double smoothT = t * t * (3.0 - 2.0 * t);
-                    // N_out = blackLevelPQ + smoothT * (toeEndTargetPQ - blackLevelPQ);
-                }
                 else
                 {
-                    // Main curve: scale in PQ space, then scale in luminance space
-                    // This exactly replicates the old approach:
-                    // N_converted = N_in * difference
-                    // L_scaled = InversePQ(N_converted) * 10000 * (maxInputNits / curve_like)
-                    // N_prime = PQ(L_scaled / 10000.0)
+                    // Calculate toe curve value
+                    double toeT = Math.Clamp((L_in - displayBlackLevelNits) / (toeEndNits - displayBlackLevelNits), 0.0, 1.0);
+                    double liftedT = Math.Pow(toeT, toeGamma);
+                    double N_toe = blackLevelPQ + liftedT * (toeEndTargetPQ - blackLevelPQ);
 
+                    // Calculate main curve value
                     double N_scaled = N_in * scaleFactor;
                     double L_scaled = InversePQ(N_scaled) * 10000.0 * (maxInputNits / contrastPivotNits);
 
-                    // Clamp to output range
-                    L_scaled = Math.Min(L_scaled, maxOutputNits);
-                    L_scaled = Math.Max(L_scaled, displayBlackLevelNits);
+                    // Apply shoulder compression for smooth highlight rolloff
+                    if (L_scaled > shoulderStartNits)
+                    {
+                        double t = (L_scaled - shoulderStartNits) / (maxOutputNits - shoulderStartNits);
+                        t = Math.Clamp(t, 0.0, 1.0);
+                        double smoothT = t / (t + (1.0 - t) * 0.5);
+                        L_scaled = shoulderStartNits + smoothT * (maxOutputNits - shoulderStartNits);
+                    }
 
-                    // Convert back to PQ
-                    N_out = PQ(L_scaled / 10000.0);
+                    L_scaled = Math.Clamp(L_scaled, displayBlackLevelNits, maxOutputNits);
+                    double N_main = PQ(L_scaled / 10000.0);
+
+                    // Blend between toe and main curve
+                    if (L_in < toeEndNits)
+                    {
+                        // Pure toe region
+                        N_out = N_toe;
+                    }
+                    else if (L_in < toeBlendEndNits)
+                    {
+                        // Blend zone: smoothly transition from toe to main curve
+                        double blendT = (L_in - toeEndNits) / (toeBlendEndNits - toeEndNits);
+                        double smoothBlend = blendT * blendT * (3.0 - 2.0 * blendT); // Smoothstep
+                        N_out = N_toe * (1.0 - smoothBlend) + N_main * smoothBlend;
+                    }
+                    else
+                    {
+                        // Pure main curve
+                        N_out = N_main;
+                    }
                 }
 
                 // Clamp output to valid range
@@ -416,6 +431,7 @@ namespace MHC2Gen
                 double linearG = InversePQ(currentG) * 10000;
                 double linearB = InversePQ(currentB) * 10000;
 
+                // Rec.2020 luminance coefficients
                 double luminance = 0.2627 * linearR + 0.6780 * linearG + 0.0593 * linearB;
 
                 double luminanceNormalized = Math.Min(luminance / 10000.0, 1.0);
@@ -473,6 +489,7 @@ namespace MHC2Gen
                 double linearG = InversePQ(currentG) * 10000;
                 double linearB = InversePQ(currentB) * 10000;
 
+                // Rec.2020 luminance coefficients
                 double luminance = 0.2627 * linearR + 0.6780 * linearG + 0.0593 * linearB;
 
                 if (luminance > quantizationThresholdNits)
@@ -1367,13 +1384,59 @@ namespace MHC2Gen
                 _ => devicePrimaries
             };
 
-            if (command.ColorGamut != ColorGamut.Native)
             {
-                var srgb_to_xyz = RgbToXYZ(targetPrimaries);
+                var target_to_xyz = RgbToXYZ(targetPrimaries);
 
                 user_matrix = XYZToRgb(devicePrimaries) * user_matrix;
 
-                user_matrix = srgb_to_xyz * user_matrix;
+                user_matrix = target_to_xyz * user_matrix;
+
+                // When Rec.2020 is selected, map P3 to Rec.2020 to get correct color rendering
+                // This keeps the Rec.2020 tone mapping behavior while compensating for P3 display
+                /*if (command.ColorGamut == ColorGamut.Rec2020)
+                {
+                    // Transform from P3 to Rec.2020: XYZ_to_Rec2020 * P3_to_XYZ
+                    var p3_to_xyz = RgbToXYZ(RgbPrimaries.P3D65);
+                    var xyz_to_rec2020 = XYZToRgb(RgbPrimaries.Rec2020);
+                    var gamut_adjust = xyz_to_rec2020 * p3_to_xyz;
+                    user_matrix = gamut_adjust * user_matrix;
+                }*/
+
+                /*
+                // Apply 50% saturation boost via matrix
+                // Saturation matrix using Rec.2020 luminance coefficients
+                const double satBoost = 1.5; // 50% boost
+                const double Lr = 0.2627;
+                const double Lg = 0.6780;
+                const double Lb = 0.0593;
+                var saturation_matrix = DenseMatrix.OfArray(new double[,] {
+                    { satBoost + (1 - satBoost) * Lr, (1 - satBoost) * Lg, (1 - satBoost) * Lb },
+                    { (1 - satBoost) * Lr, satBoost + (1 - satBoost) * Lg, (1 - satBoost) * Lb },
+                    { (1 - satBoost) * Lr, (1 - satBoost) * Lg, satBoost + (1 - satBoost) * Lb }
+                });
+                user_matrix = saturation_matrix * user_matrix;
+                */
+
+                // Normalize white balance: ensure (1,1,1) input maps to (1,1,1) output
+                // This fixes white point drift from color space conversions
+                if (command.ColorGamut != ColorGamut.Native)
+                {
+                    var white_in = new DenseVector(new double[] { 1, 1, 1 });
+                    var white_out = user_matrix * white_in;
+
+                    // Scale each row so white maps to white
+                    for (int row = 0; row < 3; row++)
+                    {
+                        if (white_out[row] > 0.001)
+                        {
+                            double scale = 1.0 / white_out[row];
+                            for (int col = 0; col < 3; col++)
+                            {
+                                user_matrix[row, col] *= scale;
+                            }
+                        }
+                    }
+                }
             }
 
             var mhc2_matrix = new double[,] {
