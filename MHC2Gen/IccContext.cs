@@ -250,7 +250,6 @@ namespace MHC2Gen
             // Calculate toe target using same transform as main curve
             double toeEndScaled = toeEndPQ * scaleFactor;
             double toeEndLuminance = InversePQ(toeEndScaled) * 10000.0 * (maxInputNits / contrastPivotNits);
-            double toeEndTargetPQ = PQ(toeEndLuminance / 10000.0);
 
             for (int i = 0; i < lutSize; i++)
             {
