@@ -266,10 +266,12 @@ namespace MHC2Gen
                 }
                 else
                 {
-                    // Calculate toe curve value
+                    // Calculate toe curve value - interpolate in linear nits, then convert to PQ
+                    // This respects the PQ perceptual curve shape
                     double toeT = Math.Clamp((L_in - displayBlackLevelNits) / (toeEndNits - displayBlackLevelNits), 0.0, 1.0);
                     double liftedT = Math.Pow(toeT, toeGamma);
-                    double N_toe = blackLevelPQ + liftedT * (toeEndTargetPQ - blackLevelPQ);
+                    double L_toe = displayBlackLevelNits + liftedT * (toeEndLuminance - displayBlackLevelNits);
+                    double N_toe = PQ(L_toe / 10000.0);
 
                     // Calculate main curve value
                     double N_scaled = N_in * scaleFactor;
