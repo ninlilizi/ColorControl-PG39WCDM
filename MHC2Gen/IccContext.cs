@@ -237,7 +237,7 @@ namespace MHC2Gen
             const double toeGamma = 1.0; // <1 lifts shadows, >1 crushes them (1.0 = linear)
 
             // Shoulder region: start compressing at 70% of max output, fully compress by max input
-            double shoulderStartNits = maxOutputNits * 0.7;
+            double shoulderStartNits = maxOutputNits * 1.0;
 
             // Calculate the PQ scaling factor
             // This replicates: difference = (PQ(gamma_like/10000) / PQ(maxOutputNits/10000))
@@ -1259,7 +1259,7 @@ namespace MHC2Gen
                 double lumSum = Lr + Lg + Lb;
                 Lr /= lumSum; Lg /= lumSum; Lb /= lumSum;
 
-                const double satBoost = 1.0; // (1.0 = no change, >1 increases saturation)
+                const double satBoost = 1.2; // (1.0 = no change, >1 increases saturation)
                 var saturation_matrix = DenseMatrix.OfArray(new double[,] {
                     { satBoost + (1 - satBoost) * Lr, (1 - satBoost) * Lg, (1 - satBoost) * Lb },
                     { (1 - satBoost) * Lr, satBoost + (1 - satBoost) * Lg, (1 - satBoost) * Lb },

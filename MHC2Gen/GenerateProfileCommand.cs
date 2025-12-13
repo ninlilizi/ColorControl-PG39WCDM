@@ -12,7 +12,7 @@ public class GenerateProfileCommand
     public ColorGamut ColorGamut { get; set; }
     public double MinCLL { get; set; }
     public double MaxCLL { get; set; }
-    public double WhiteLuminance { get; set; } = 1000;
+    public double WhiteLuminance { get; set; } = 1300;
     public double BlackLuminance { get; set; }
     public double SDRMinBrightness { get; set; }
     public double SDRMaxBrightness { get; set; } = 100;
