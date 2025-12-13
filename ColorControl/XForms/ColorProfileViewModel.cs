@@ -124,7 +124,7 @@ internal class ColorProfileViewModel : BaseViewModel
 	public double HdrBrightnessMultiplier { get; set; } = 1;
 
 	[Range(.04, 25)]
-	public double HdrGammaMultiplier { get; set; } = 0.24;
+	public double HdrGammaMultiplier { get; set; } = 0.1;
 
 	[Range(0, 100)]
 	public double WOLEDDesaturationCompensation { get; set; } = 95;

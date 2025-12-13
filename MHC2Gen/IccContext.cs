@@ -230,9 +230,10 @@ namespace MHC2Gen
             }
 
             // Display characteristics
-            const double displayBlackLevelNits = 0.0007171630859375;
-            const double toeEndNits = 1.0; // Where toe curve ends
-            const double toeBlendEndNits = 2.0; // Where blending to main curve completes
+            //const double displayBlackLevelNits = 0.0007171630859375;
+            const double displayBlackLevelNits = 0.0007;
+            const double toeEndNits = 0.005; // Where toe curve ends
+            const double toeBlendEndNits = 1.0; // Where blending to main curve completes
             const double toeGamma = 1.0; // <1 lifts shadows, >1 crushes them (1.0 = linear)
 
             // Shoulder region: start compressing at 70% of max output, fully compress by max input
@@ -318,92 +319,6 @@ namespace MHC2Gen
             }
         }
 
-        /// <summary>
-        /// PQ-native tonemapping with smooth toe and shoulder using Hermite interpolation.
-        /// Provides finer control over toe strength, contrast, and shoulder compression.
-        /// </summary>
-        public void ApplyToneMappingCurvePQSmooth(double maxInputNits = 400, double maxOutputNits = 400,
-            double contrast = 1.65, double toeStrength = 0.55, double shoulderStrength = 0.95)
-        {
-            int lutSize = 4096;
-            bool lutExist = true;
-            if (RegammaLUT == null)
-            {
-                lutExist = false;
-                RegammaLUT = new double[3, lutSize];
-            }
-
-            const double displayBlackLevelNits = 0.0007171630859375;
-            double blackLevelPQ = PQ(displayBlackLevelNits / 10000.0);
-
-            // Define curve segments in luminance space
-            double toeEnd = 10.0; // nits where toe ends
-            double shoulderStart = maxOutputNits * 0.7; // where shoulder begins
-
-            for (int i = 0; i < lutSize; i++)
-            {
-                double N_in = lutExist ? RegammaLUT[0, i] : (double)i / (lutSize - 1);
-                double L_in = InversePQ(N_in) * 10000.0;
-
-                double L_out;
-
-                if (L_in <= displayBlackLevelNits)
-                {
-                    L_out = displayBlackLevelNits;
-                }
-                else if (L_in < toeEnd)
-                {
-                    // Smooth toe using Hermite interpolation
-                    double t = L_in / toeEnd;
-                    double t2 = t * t;
-                    double t3 = t2 * t;
-
-                    // Hermite basis functions for smooth toe
-                    double h1 = 2*t3 - 3*t2 + 1;
-                    double h2 = -2*t3 + 3*t2;
-
-                    double y0 = displayBlackLevelNits;
-                    double y1 = Math.Pow(toeEnd / maxInputNits, 1.0 / contrast) * maxOutputNits;
-
-                    // Apply toe strength
-                    y1 = y1 * toeStrength + toeEnd * (1.0 - toeStrength);
-
-                    L_out = h1 * y0 + h2 * y1;
-                    L_out = Math.Max(L_out, displayBlackLevelNits);
-                }
-                else if (L_in < shoulderStart)
-                {
-                    // Mid-tones: power function in luminance space
-                    double t = L_in / maxInputNits;
-                    t = Math.Clamp(t, 0.0, 1.0);
-                    L_out = Math.Pow(t, 1.0 / contrast) * maxOutputNits;
-                }
-                else
-                {
-                    // Shoulder: smooth compression
-                    double t = (L_in - shoulderStart) / (maxInputNits - shoulderStart);
-                    t = Math.Clamp(t, 0.0, 1.0);
-
-                    // Smooth shoulder using modified rational function
-                    double shoulder = shoulderStrength * t / (shoulderStrength * t + (1.0 - shoulderStrength));
-
-                    double midValue = Math.Pow(shoulderStart / maxInputNits, 1.0 / contrast) * maxOutputNits;
-                    L_out = midValue + shoulder * (maxOutputNits - midValue);
-                }
-
-                L_out = Math.Clamp(L_out, displayBlackLevelNits, maxOutputNits);
-
-                double N_out = PQ(L_out / 10000.0);
-                N_out = Math.Clamp(N_out, 0.0, 1.0);
-
-                for (int c = 0; c < 3; c++)
-                {
-                    RegammaLUT[c, i] = N_out;
-                }
-            }
-        }
-
-
         public void ApplyWOLEDDesaturationCompensation(double compensationStrength)
         {
             if (RegammaLUT == null || compensationStrength <= 0)
@@ -465,64 +380,6 @@ namespace MHC2Gen
                     RegammaLUT[0, i] = currentR;
                     RegammaLUT[1, i] = currentG;
                     RegammaLUT[2, i] = currentB;
-                }
-
-                RegammaLUT[0, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[0, i]));
-                RegammaLUT[1, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[1, i]));
-                RegammaLUT[2, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[2, i]));
-            }
-        }
-
-        public void ApplyWOLEDQuantizationCompensation(double whiteSubPixelContribution = 0.25, double quantizationThresholdNits = 1000.0, double peakLuminanceNits = 1300.0)
-        {
-            if (RegammaLUT == null)
-                return;
-
-            int lutSize = RegammaLUT.GetLength(1);
-
-            for (int i = 0; i < lutSize; i++)
-            {
-                double currentR = RegammaLUT[0, i];
-                double currentG = RegammaLUT[1, i];
-                double currentB = RegammaLUT[2, i];
-
-                double linearR = InversePQ(currentR) * 10000;
-                double linearG = InversePQ(currentG) * 10000;
-                double linearB = InversePQ(currentB) * 10000;
-
-                // Rec.2020 luminance coefficients
-                double luminance = 0.2627 * linearR + 0.6780 * linearG + 0.0593 * linearB;
-
-                if (luminance > quantizationThresholdNits)
-                {
-                    double avg = (linearR + linearG + linearB) / 3.0;
-
-                    double deviation = 0.0;
-                    if (avg > 1e-6)
-                    {
-                        deviation = (Math.Abs(linearR - avg) + Math.Abs(linearG - avg) + Math.Abs(linearB - avg)) / (3.0 * avg);
-                    }
-
-                    double whiteRatio = Math.Clamp(1.0 - deviation, 0.0, 1.0);
-
-                    // 4. Optionally blend with luminance weighting (more conservative near threshold)
-                    //    (can be tuned: higher exponent tightens neutrality requirement)
-                    whiteRatio = Math.Pow(whiteRatio, 1.0); // exponent left as 1.0 for now
-
-                    double maxAllowedLuminance = quantizationThresholdNits +
-                        (peakLuminanceNits - quantizationThresholdNits) * (1.0 - whiteRatio * whiteSubPixelContribution);
-
-                    if (luminance > maxAllowedLuminance)
-                    {
-                        double scaleFactor = maxAllowedLuminance / luminance;
-                        linearR *= scaleFactor;
-                        linearG *= scaleFactor;
-                        linearB *= scaleFactor;
-
-                        RegammaLUT[0, i] = PQ(linearR / 10000.0);
-                        RegammaLUT[1, i] = PQ(linearG / 10000.0);
-                        RegammaLUT[2, i] = PQ(linearB / 10000.0);
-                    }
                 }
 
                 RegammaLUT[0, i] = Math.Max(0.0, Math.Min(1.0, RegammaLUT[0, i]));
@@ -1392,58 +1249,51 @@ namespace MHC2Gen
 
                 user_matrix = target_to_xyz * user_matrix;
 
-                // When Rec.2020 is selected, map P3 to Rec.2020 to get correct color rendering
-                // This keeps the Rec.2020 tone mapping behavior while compensating for P3 display
-                /*if (command.ColorGamut == ColorGamut.Rec2020)
-                {
-                    // Transform from P3 to Rec.2020: XYZ_to_Rec2020 * P3_to_XYZ
-                    var p3_to_xyz = RgbToXYZ(RgbPrimaries.P3D65);
-                    var xyz_to_rec2020 = XYZToRgb(RgbPrimaries.Rec2020);
-                    var gamut_adjust = xyz_to_rec2020 * p3_to_xyz;
-                    user_matrix = gamut_adjust * user_matrix;
-                }*/
+                // Apply saturation boost via matrix
+                // Calculate luminance coefficients from device primaries (Y row of RGB to XYZ matrix)
+                var deviceRgbToXyz = RgbToXYZ(devicePrimaries);
+                double Lr = deviceRgbToXyz[1, 0]; // Y coefficient for R
+                double Lg = deviceRgbToXyz[1, 1]; // Y coefficient for G
+                double Lb = deviceRgbToXyz[1, 2]; // Y coefficient for B
+                // Normalize so they sum to 1
+                double lumSum = Lr + Lg + Lb;
+                Lr /= lumSum; Lg /= lumSum; Lb /= lumSum;
 
-                /*
-                // Apply 50% saturation boost via matrix
-                // Saturation matrix using Rec.2020 luminance coefficients
-                const double satBoost = 1.5; // 50% boost
-                const double Lr = 0.2627;
-                const double Lg = 0.6780;
-                const double Lb = 0.0593;
+                const double satBoost = 1.0; // (1.0 = no change, >1 increases saturation)
                 var saturation_matrix = DenseMatrix.OfArray(new double[,] {
                     { satBoost + (1 - satBoost) * Lr, (1 - satBoost) * Lg, (1 - satBoost) * Lb },
                     { (1 - satBoost) * Lr, satBoost + (1 - satBoost) * Lg, (1 - satBoost) * Lb },
                     { (1 - satBoost) * Lr, (1 - satBoost) * Lg, satBoost + (1 - satBoost) * Lb }
                 });
                 user_matrix = saturation_matrix * user_matrix;
-                */
 
-                // Normalize white balance: ensure (1,1,1) input maps to (1,1,1) output
-                // This fixes white point drift from color space conversions
-                if (command.ColorGamut != ColorGamut.Native)
+                // Apply contrast adjustment around pivot point (no brightness change)
+                // Contrast > 1.0 increases, < 1.0 decreases, 1.0 = no change
+                // Formula: output = (input - pivot) * contrast + pivot
+                //                 = input * contrast + pivot * (1 - contrast)
+                const double contrast = 2.0;
+                const double contrastPivot = 0.5; // Mid-gray pivot
+                double contrastOffset = contrastPivot * (1.0 - contrast);
+
+                for (int row = 0; row < 3; row++)
                 {
-                    var white_in = new DenseVector(new double[] { 1, 1, 1 });
-                    var white_out = user_matrix * white_in;
-
-                    // Scale each row so white maps to white
-                    for (int row = 0; row < 3; row++)
+                    for (int col = 0; col < 3; col++)
                     {
-                        if (white_out[row] > 0.001)
-                        {
-                            double scale = 1.0 / white_out[row];
-                            for (int col = 0; col < 3; col++)
-                            {
-                                user_matrix[row, col] *= scale;
-                            }
-                        }
+                        user_matrix[row, col] *= contrast;
                     }
                 }
+
             }
 
+            // Calculate contrast offset for 4th column (applied after matrix multiply)
+            const double contrastForOffset = 2.0; // Must match contrast value above
+            const double pivotForOffset = 0.5;
+            double offsetValue = pivotForOffset * (1.0 - contrastForOffset);
+
             var mhc2_matrix = new double[,] {
-               { user_matrix[0,0], user_matrix[0,1], user_matrix[0,2], 0 },
-               { user_matrix[1,0], user_matrix[1,1], user_matrix[1,2], 0 },
-               { user_matrix[2,0], user_matrix[2,1], user_matrix[2,2], 0 },
+               { user_matrix[0,0], user_matrix[0,1], user_matrix[0,2], offsetValue },
+               { user_matrix[1,0], user_matrix[1,1], user_matrix[1,2], offsetValue },
+               { user_matrix[2,0], user_matrix[2,1], user_matrix[2,2], offsetValue },
             };
 
             MHC2 = new MHC2Tag
@@ -1492,19 +1342,6 @@ namespace MHC2Gen
                         maxOutputNits: to_nits,
                         contrastPivotNits: contrastPivot
                     );
-
-                    // Alternative: Use the smooth Hermite-based approach for finer control
-                    // Uncomment this and comment out the above to try the smoother approach:
-                    // double effectiveContrast = command.HdrGammaMultiplier;
-                    // MHC2.ApplyToneMappingCurvePQSmooth(
-                    //     maxInputNits: 1000,
-                    //     maxOutputNits: 1000,
-                    //     contrast: effectiveContrast,
-                    //     toeStrength: 0.55,
-                    //     shoulderStrength: 0.95
-                    // );
-
-                    //MHC2.ApplyWOLEDQuantizationCompensation(0.25, 1000.0, 1300.0);
 
                     MHC2.ApplyWOLEDDesaturationCompensation(95);
                 }
