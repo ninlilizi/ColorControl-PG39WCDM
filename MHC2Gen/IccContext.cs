@@ -1259,7 +1259,7 @@ namespace MHC2Gen
                 double lumSum = Lr + Lg + Lb;
                 Lr /= lumSum; Lg /= lumSum; Lb /= lumSum;
 
-                const double satBoost = 1.2; // (1.0 = no change, >1 increases saturation)
+                const double satBoost = 1.1; // (1.0 = no change, >1 increases saturation)
                 var saturation_matrix = DenseMatrix.OfArray(new double[,] {
                     { satBoost + (1 - satBoost) * Lr, (1 - satBoost) * Lg, (1 - satBoost) * Lb },
                     { (1 - satBoost) * Lr, satBoost + (1 - satBoost) * Lg, (1 - satBoost) * Lb },
