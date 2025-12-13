@@ -4,7 +4,6 @@
 * Upgrade profile version to MHC3 to support HDR specific parameters.
 * Default values set to optimal for the monitor.
 * Fixed MaxFALL to 265.
-* Saturation boost to 15%.
 * Customized gamma curve to mitigate the displays effective gamma being closer to 1.8 than the expected 2.2.
 * Output custom .cube 3D LUTs with maximum number of steps to allow color accurate correction in professional softwares.
 
