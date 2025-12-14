@@ -110,15 +110,25 @@ namespace MHC2Gen
             var lutSize = 4096; // Increased from 1024 to 4096 for maximum accuracy
             var amplifier = boostPercentage == 0 ? 1 : 1 + boostPercentage / 100;
 
+            // Compress max brightness in PQ space (0.8 = 80% of max nits)
+            const double maxBrightnessCompression = 0.25;
+
             RegammaLUT = new double[3, lutSize];
 
             for (var i = 0; i < lutSize; i++)
             {
-                var value = (double)i / (lutSize - 1); // Fixed: use lutSize-1
+                var pqIn = (double)i / (lutSize - 1);
+
+                // Convert PQ to linear luminance, compress, convert back to PQ
+                var luminance = InversePQ(pqIn); // 0-1 range (normalized to 10000 nits)
+                luminance *= amplifier * maxBrightnessCompression;
+                var pqOut = PQ(luminance);
+
+                pqOut = Math.Clamp(pqOut, 0.0, 1.0);
 
                 for (var c = 0; c < 3; c++)
                 {
-                    RegammaLUT[c, i] = value * amplifier;
+                    RegammaLUT[c, i] = pqOut;
                 }
             }
         }
@@ -217,9 +227,11 @@ namespace MHC2Gen
         /// Works by applying a scale factor in PQ space, then converting to luminance and scaling again.
         /// This maintains saturation by working on each color channel independently.
         /// The contrastPivotNits parameter controls where the contrast boost is anchored.
+        /// The brightnessMultiplier scales the output brightness (1.0 = no change, >1 = brighter).
+        /// The maxBrightnessCompression compresses max brightness (1.0 = no compression, 0.25 = 25% of max).
         /// </summary>
         public void ApplyToneMappingCurvePQNative(double maxInputNits = 400, double maxOutputNits = 400,
-            double contrastPivotNits = 400)
+            double contrastPivotNits = 400, double brightnessMultiplier = 1.0, double maxBrightnessCompression = 1.0)
         {
             int lutSize = 4096;
             bool lutExist = true;
@@ -232,8 +244,8 @@ namespace MHC2Gen
             // Display characteristics
             //const double displayBlackLevelNits = 0.0007171630859375;
             const double displayBlackLevelNits = 0.0007;
-            const double toeEndNits = 0.005; // Where toe curve ends
-            const double toeBlendEndNits = 1.0; // Where blending to main curve completes
+            const double toeEndNits = 1.0; // Where toe curve ends
+            const double toeBlendEndNits = 1.5; // Where blending to main curve completes
             const double toeGamma = 1.0; // <1 lifts shadows, >1 crushes them (1.0 = linear)
 
             // Shoulder region: start compressing at 70% of max output, fully compress by max input
@@ -271,22 +283,30 @@ namespace MHC2Gen
                     double toeT = Math.Clamp((L_in - displayBlackLevelNits) / (toeEndNits - displayBlackLevelNits), 0.0, 1.0);
                     double liftedT = Math.Pow(toeT, toeGamma);
                     double L_toe = displayBlackLevelNits + liftedT * (toeEndLuminance - displayBlackLevelNits);
+                    // Apply brightness multiplier and compression to toe
+                    L_toe *= brightnessMultiplier * maxBrightnessCompression;
+                    L_toe = Math.Clamp(L_toe, displayBlackLevelNits, maxOutputNits * maxBrightnessCompression);
                     double N_toe = PQ(L_toe / 10000.0);
 
                     // Calculate main curve value
                     double N_scaled = N_in * scaleFactor;
                     double L_scaled = InversePQ(N_scaled) * 10000.0 * (maxInputNits / contrastPivotNits);
 
+                    // Apply brightness multiplier and compression
+                    L_scaled *= brightnessMultiplier * maxBrightnessCompression;
+
                     // Apply shoulder compression for smooth highlight rolloff
-                    if (L_scaled > shoulderStartNits)
+                    double compressedMaxOutput = maxOutputNits * maxBrightnessCompression;
+                    double compressedShoulderStart = shoulderStartNits * maxBrightnessCompression;
+                    if (L_scaled > compressedShoulderStart)
                     {
-                        double t = (L_scaled - shoulderStartNits) / (maxOutputNits - shoulderStartNits);
+                        double t = (L_scaled - compressedShoulderStart) / (compressedMaxOutput - compressedShoulderStart);
                         t = Math.Clamp(t, 0.0, 1.0);
                         double smoothT = t / (t + (1.0 - t) * 0.5);
-                        L_scaled = shoulderStartNits + smoothT * (maxOutputNits - shoulderStartNits);
+                        L_scaled = compressedShoulderStart + smoothT * (compressedMaxOutput - compressedShoulderStart);
                     }
 
-                    L_scaled = Math.Clamp(L_scaled, displayBlackLevelNits, maxOutputNits);
+                    L_scaled = Math.Clamp(L_scaled, displayBlackLevelNits, compressedMaxOutput);
                     double N_main = PQ(L_scaled / 10000.0);
 
                     // Blend between toe and main curve
@@ -1259,6 +1279,7 @@ namespace MHC2Gen
                 double lumSum = Lr + Lg + Lb;
                 Lr /= lumSum; Lg /= lumSum; Lb /= lumSum;
 
+                // Saturation boost (gamut expansion)
                 const double satBoost = 1.1; // (1.0 = no change, >1 increases saturation)
                 var saturation_matrix = DenseMatrix.OfArray(new double[,] {
                     { satBoost + (1 - satBoost) * Lr, (1 - satBoost) * Lg, (1 - satBoost) * Lb },
@@ -1267,12 +1288,35 @@ namespace MHC2Gen
                 });
                 user_matrix = saturation_matrix * user_matrix;
 
+                // Contrast boost anchored at white (keeps max brightness, crushes shadows)
+                // Formula: output = (input - 1.0) * contrast + 1.0 = input * contrast + (1 - contrast)
+                const double contrastBoost = 1.0; // (1.0 = no change, >1 increases contrast)
+                for (int row = 0; row < 3; row++)
+                {
+                    for (int col = 0; col < 3; col++)
+                    {
+                        user_matrix[row, col] *= contrastBoost;
+                    }
+                }
             }
 
+            // Offset anchored at display peak brightness in PQ space
+            const double contrastForOffset = 1.0; // Must match contrastBoost above
+            // Inline PQ calculation: L is normalized luminance (nits / 10000)
+            double L = command.WhiteLuminance / 10000.0;
+            double m1 = 0.1593017578125;
+            double m2 = 78.84375;
+            double c1 = 0.8359375;
+            double c2 = 18.8515625;
+            double c3 = 18.6875;
+            double Lm1 = Math.Pow(L, m1);
+            double whitePointPQ = Math.Pow((c1 + c2 * Lm1) / (1 + c3 * Lm1), m2);
+            double contrastOffset = whitePointPQ * (1.0 - contrastForOffset);
+
             var mhc2_matrix = new double[,] {
-               { user_matrix[0,0], user_matrix[0,1], user_matrix[0,2], 0 },
-               { user_matrix[1,0], user_matrix[1,1], user_matrix[1,2], 0 },
-               { user_matrix[2,0], user_matrix[2,1], user_matrix[2,2], 0 },
+               { user_matrix[0,0], user_matrix[0,1], user_matrix[0,2], contrastOffset },
+               { user_matrix[1,0], user_matrix[1,1], user_matrix[1,2], contrastOffset },
+               { user_matrix[2,0], user_matrix[2,1], user_matrix[2,2], contrastOffset },
             };
 
             MHC2 = new MHC2Tag
@@ -1293,7 +1337,7 @@ namespace MHC2Gen
                 }
                 else if (command.SDRTransferFunction == SDRTransferFunction.BT_1886)
                 {
-                    MHC2.ApplySdrAcm(120, 0.03, 2.4, command.SDRBrightnessBoost, command.ShadowDetailBoost);
+                    MHC2.ApplySdrAcm(120, 0.0007, 2.4, command.SDRBrightnessBoost, command.ShadowDetailBoost);
                 }
                 else if (command.SDRTransferFunction == SDRTransferFunction.ToneMappedPiecewise)
                 {
@@ -1315,11 +1359,13 @@ namespace MHC2Gen
                     //            = from_nits / HdrGammaMultiplier
                     double contrastPivot = from_nits / command.HdrGammaMultiplier;
 
-                    // Apply PQ-native tonemapping (pure PQ curve, no contrast/brightness adjustments)
+                    // Apply PQ-native tonemapping with brightness adjustment and compression
                     MHC2.ApplyToneMappingCurvePQNative(
                         maxInputNits: from_nits,
                         maxOutputNits: to_nits,
-                        contrastPivotNits: contrastPivot
+                        contrastPivotNits: contrastPivot,
+                        brightnessMultiplier: command.HdrBrightnessMultiplier,
+                        maxBrightnessCompression: 1.0
                     );
 
                     MHC2.ApplyWOLEDDesaturationCompensation(95);
