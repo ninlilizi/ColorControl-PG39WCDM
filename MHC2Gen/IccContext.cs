@@ -87,7 +87,9 @@ namespace MHC2Gen
             // - Between expOnlyThreshold and linearThreshold: blend from exponential to linear
             // - Below expOnlyThreshold: pure exponential dimming
             double shadowDimFactor = 1.0;             // 0.5 = half brightness at black
-            shadowDimFactor += minCLL;
+            // Use PQ-normalized minCLL instead of raw nits for perceptually uniform contribution
+            double normalizedMinCLL = PQ(minCLL / 10000.0);
+            shadowDimFactor += normalizedMinCLL;
             const double linearThreshold = 1.0;       // Above this: no dimming
             const double expOnlyThreshold = 0.5;      // Below this: pure exponential
             const double expDecayRate = 3.0;          // Controls exponential steepness
@@ -937,13 +939,25 @@ namespace MHC2Gen
 
             // Compensate: Rec2020 - (Native - sRGB) = Rec2020 + (sRGB - Native)
             // If display renders red more saturated than sRGB, pull Rec2020 red back
+            double rx = rec2020.Red.x + (srgb.Red.x - devicePrimaries.Red.x);
+            double ry = rec2020.Red.y + (srgb.Red.y - devicePrimaries.Red.y);
+            double gx = rec2020.Green.x + (srgb.Green.x - devicePrimaries.Green.x);
+            double gy = rec2020.Green.y + (srgb.Green.y - devicePrimaries.Green.y);
+            double bx = rec2020.Blue.x + (srgb.Blue.x - devicePrimaries.Blue.x);
+            double by = rec2020.Blue.y + (srgb.Blue.y - devicePrimaries.Blue.y);
+
+            // Clamp to valid chromaticity bounds (0 < x,y < 1, and x+y < 1 for valid color)
+            rx = Math.Clamp(rx, 0.01, 0.99);
+            ry = Math.Clamp(ry, 0.01, Math.Min(0.99, 0.99 - rx));
+            gx = Math.Clamp(gx, 0.01, 0.99);
+            gy = Math.Clamp(gy, 0.01, Math.Min(0.99, 0.99 - gx));
+            bx = Math.Clamp(bx, 0.01, 0.99);
+            by = Math.Clamp(by, 0.01, Math.Min(0.99, 0.99 - bx));
+
             return new RgbPrimaries(
-                new CIExy { x = rec2020.Red.x + (srgb.Red.x - devicePrimaries.Red.x),
-                            y = rec2020.Red.y + (srgb.Red.y - devicePrimaries.Red.y) },
-                new CIExy { x = rec2020.Green.x + (srgb.Green.x - devicePrimaries.Green.x),
-                            y = rec2020.Green.y + (srgb.Green.y - devicePrimaries.Green.y) },
-                new CIExy { x = rec2020.Blue.x + (srgb.Blue.x - devicePrimaries.Blue.x),
-                            y = rec2020.Blue.y + (srgb.Blue.y - devicePrimaries.Blue.y) },
+                new CIExy { x = rx, y = ry },
+                new CIExy { x = gx, y = gy },
+                new CIExy { x = bx, y = by },
                 rec2020.White  // Keep D65 white point protected
             );
         }
@@ -1406,6 +1420,11 @@ namespace MHC2Gen
                 {
                     satBoost = 0.95;
                 }
+                else if (command.ColorGamut == ColorGamut.Rec2020Native)
+                {
+                    // Slight desaturation for adapted primaries compensation
+                    satBoost = 0.98;
+                }
                 else if (command.ColorGamut == ColorGamut.Native)
                 {
                     satBoost = 1.05;
@@ -1456,6 +1475,9 @@ namespace MHC2Gen
                     // Apply S-curve contrast (1.0 = no change, >1 = more contrast)
                     const double contrastSCurve = 1.2;
                     MHC2.ApplyContrastSCurve(contrastSCurve);
+
+                    // WOLED panels desaturate at low luminance - compensate for ABL effect
+                    MHC2.ApplyWOLEDDesaturationCompensation(95);
                 }
                 else if (command.SDRTransferFunction == SDRTransferFunction.ToneMappedPiecewise)
                 {

@@ -71,7 +71,7 @@ internal class ColorProfileViewModel : BaseViewModel
 	public Dictionary<DisplayPrimariesSource, string> PrimariesSources { get; } = Utils.EnumToDictionary<DisplayPrimariesSource>();
 	public DisplayPrimariesSource PrimariesSource { get; set; } = DisplayPrimariesSource.EDID;
 	public Dictionary<ColorGamut, string> ColorGamuts { get; } = Utils.EnumToDictionary<ColorGamut>();
-	public ColorGamut ColorGamut { get; set; } = ColorGamut.Native;
+	public ColorGamut ColorGamut { get; set; } = ColorGamut.Rec2020Native;
 	public Dictionary<SDRTransferFunction, string> SDRTransferFunctions { get; } = Utils.EnumToDictionary<SDRTransferFunction>();
 	public SDRTransferFunction SDRTransferFunction { get; set; } = SDRTransferFunction.BT_1886;
 	[Range(0.1, 10)]
