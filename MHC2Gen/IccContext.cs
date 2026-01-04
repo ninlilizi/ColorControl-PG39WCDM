@@ -77,10 +77,24 @@ namespace MHC2Gen
             }
         }
 
-        public void ApplySdrAcm(double whiteLuminance = 120.0, double blackLuminance = 0.0, double gamma = 2.4, double boostPercentage = 0, double shadowDetailBoost = 0)
+        public void ApplySdrAcm(double whiteLuminance = 120.0, double blackLuminance = 0.0, double gamma = 2.2, double boostPercentage = 0, double shadowDetailBoost = 0, double minCLL = 0.00248)
         {
             var lutSize = 4096; // Increased from 1024 to 4096 for maximum accuracy
             var amplifier = boostPercentage == 0 ? 1 : 1 + boostPercentage / 100;
+
+            // Shadow dimming with three zones:
+            // - Above linearThreshold: pure linear (no dimming)
+            // - Between expOnlyThreshold and linearThreshold: blend from exponential to linear
+            // - Below expOnlyThreshold: pure exponential dimming
+            double shadowDimFactor = 1.0;             // 0.5 = half brightness at black
+            shadowDimFactor += minCLL;
+            const double linearThreshold = 1.0;       // Above this: no dimming
+            const double expOnlyThreshold = 0.5;      // Below this: pure exponential
+            const double expDecayRate = 3.0;          // Controls exponential steepness
+
+            
+
+            double blackLevelPQ = PQ(minCLL / 10000.0);
 
             RegammaLUT = new double[3, lutSize];
 
@@ -91,27 +105,66 @@ namespace MHC2Gen
                 // Average between sSRGB and Piecewise gamma
                 if (shadowDetailBoost > 0)
                 {
-                    var piecewiseValue = (double)i / (lutSize - 1); // Fixed: use lutSize-1
-
-                    var correctedBoost = (shadowDetailBoost * (lutSize - 1 - i)) / (lutSize - 1); // Fixed: use lutSize-1
-
+                    var piecewiseValue = (double)i / (lutSize - 1);
+                    var correctedBoost = (shadowDetailBoost * (lutSize - 1 - i)) / (lutSize - 1);
                     value = ((value * (100 - correctedBoost)) + (piecewiseValue * correctedBoost)) / 100;
                 }
 
+                value *= amplifier;
+
+                // Convert to luminance
+                double L_in = InversePQ(value) * 10000.0; // nits
+
+                double finalValue;
+
+                if (L_in <= minCLL)
+                {
+                    // Below black level - clamp
+                    finalValue = blackLevelPQ;
+                }
+                else if (L_in >= linearThreshold)
+                {
+                    // Above linear threshold - no dimming, pass through
+                    finalValue = value;
+                }
+                else
+                {
+                    // Calculate exponential-dimmed value
+                    double distance = L_in - minCLL;
+                    double dimMultiplier = 1.0 - (1.0 - shadowDimFactor) * Math.Exp(-expDecayRate * distance);
+                    double L_exp = L_in * dimMultiplier;
+                    double expValue = PQ(Math.Max(L_exp, minCLL) / 10000.0);
+
+                    if (L_in <= expOnlyThreshold)
+                    {
+                        // Pure exponential zone
+                        finalValue = expValue;
+                    }
+                    else
+                    {
+                        // Blend zone: smoothstep from exponential to linear
+                        double blendT = (L_in - expOnlyThreshold) / (linearThreshold - expOnlyThreshold);
+                        double smoothBlend = blendT * blendT * (3.0 - 2.0 * blendT);
+                        finalValue = expValue * (1.0 - smoothBlend) + value * smoothBlend;
+                    }
+                }
+
+                finalValue = Math.Clamp(finalValue, blackLevelPQ, 1.0);
+
                 for (var c = 0; c < 3; c++)
                 {
-                    RegammaLUT[c, i] = value * amplifier;
+                    RegammaLUT[c, i] = finalValue;
                 }
             }
         }
 
-        public void ApplyPiecewise(double boostPercentage = 0)
+        public void ApplyPiecewise(double boostPercentage = 0, double minCLL = 0.00248)
         {
             var lutSize = 4096; // Increased from 1024 to 4096 for maximum accuracy
             var amplifier = boostPercentage == 0 ? 1 : 1 + boostPercentage / 100;
 
-            // Compress max brightness in PQ space (0.8 = 80% of max nits)
-            const double maxBrightnessCompression = 0.25;
+            // Calculate black level in PQ space
+            double blackLevelPQ = PQ(minCLL / 10000.0);
 
             RegammaLUT = new double[3, lutSize];
 
@@ -119,12 +172,15 @@ namespace MHC2Gen
             {
                 var pqIn = (double)i / (lutSize - 1);
 
-                // Convert PQ to linear luminance, compress, convert back to PQ
-                var luminance = InversePQ(pqIn); // 0-1 range (normalized to 10000 nits)
-                luminance *= amplifier * maxBrightnessCompression;
-                var pqOut = PQ(luminance);
+                // Convert to luminance, apply amplifier, convert back
+                var luminance = InversePQ(pqIn) * 10000.0; // nits
+                luminance *= amplifier;
 
-                pqOut = Math.Clamp(pqOut, 0.0, 1.0);
+                // Clamp to minCLL at the low end
+                luminance = Math.Max(luminance, minCLL);
+
+                var pqOut = PQ(luminance / 10000.0);
+                pqOut = Math.Clamp(pqOut, blackLevelPQ, 1.0);
 
                 for (var c = 0; c < 3; c++)
                 {
@@ -160,7 +216,7 @@ namespace MHC2Gen
             }
         }
 
-        public void ApplyToneMappingCurveGamma(double maxInputNits = 400, double maxOutputNits = 400, double curve_like = 400)
+        public void ApplyToneMappingCurveGamma(double maxInputNits = 400, double maxOutputNits = 400, double curve_like = 400, double minCLL = 0.00248)
         {
             int lutSize = 4096;
             bool lutExist = true;
@@ -174,7 +230,7 @@ namespace MHC2Gen
             double L_target_prime = (PQ(curve_like / 10000.0) / PQ(maxOutputNits / 10000.0));
             double difference = L_target_prime;
 
-            const double displayBlackLevelNits = 0.0007171630859375;
+            double displayBlackLevelNits = minCLL;
             const double toeThresholdNits = 1.5;
             double blackLevelPQ = PQ(displayBlackLevelNits / 10000.0);
             double toeInputSignalPQ = PQ(toeThresholdNits / 10000.0);
@@ -229,9 +285,11 @@ namespace MHC2Gen
         /// The contrastPivotNits parameter controls where the contrast boost is anchored.
         /// The brightnessMultiplier scales the output brightness (1.0 = no change, >1 = brighter).
         /// The maxBrightnessCompression compresses max brightness (1.0 = no compression, 0.25 = 25% of max).
+        /// The minCLL sets the display black level in nits.
         /// </summary>
         public void ApplyToneMappingCurvePQNative(double maxInputNits = 400, double maxOutputNits = 400,
-            double contrastPivotNits = 400, double brightnessMultiplier = 1.0, double maxBrightnessCompression = 1.0)
+            double contrastPivotNits = 400, double brightnessMultiplier = 1.0, double maxBrightnessCompression = 1.0,
+            double minCLL = 0.00248)
         {
             int lutSize = 4096;
             bool lutExist = true;
@@ -242,8 +300,7 @@ namespace MHC2Gen
             }
 
             // Display characteristics
-            //const double displayBlackLevelNits = 0.0007171630859375;
-            const double displayBlackLevelNits = 0.0007;
+            double displayBlackLevelNits = minCLL;
             const double toeEndNits = 1.0; // Where toe curve ends
             const double toeBlendEndNits = 1.5; // Where blending to main curve completes
             const double toeGamma = 1.0; // <1 lifts shadows, >1 crushes them (1.0 = linear)
@@ -335,6 +392,45 @@ namespace MHC2Gen
                 for (int c = 0; c < 3; c++)
                 {
                     RegammaLUT[c, i] = N_out;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Applies S-curve contrast in PQ space. Preserves black (0) and white (1) endpoints.
+        /// contrastAmount: 1.0 = no change, >1 = more contrast, <1 = less contrast
+        /// </summary>
+        public void ApplyContrastSCurve(double contrastAmount = 1.0)
+        {
+            if (RegammaLUT == null || contrastAmount == 1.0)
+                return;
+
+            int lutSize = RegammaLUT.GetLength(1);
+
+            for (int i = 0; i < lutSize; i++)
+            {
+                for (int c = 0; c < 3; c++)
+                {
+                    double pqValue = RegammaLUT[c, i];
+
+                    // S-curve using power function anchored at 0.5
+                    // For contrast > 1: steepens curve around midpoint
+                    // For contrast < 1: flattens curve around midpoint
+                    if (pqValue <= 0.0 || pqValue >= 1.0)
+                        continue; // Preserve endpoints exactly
+
+                    // Apply S-curve: shift to [-0.5, 0.5], apply contrast, shift back
+                    double centered = pqValue - 0.5;
+                    double sign = Math.Sign(centered);
+                    double magnitude = Math.Abs(centered) * 2.0; // Scale to [0, 1]
+
+                    // Apply power curve for contrast
+                    double adjusted = Math.Pow(magnitude, 1.0 / contrastAmount);
+
+                    // Scale back and shift
+                    double result = 0.5 + sign * adjusted * 0.5;
+
+                    RegammaLUT[c, i] = Math.Clamp(result, 0.0, 1.0);
                 }
             }
         }
@@ -584,8 +680,8 @@ namespace MHC2Gen
         public double ToneMappingFromLuminance { get; set; }
         public double ToneMappingToLuminance { get; set; }
 
-        public double HdrGammaMultiplier { get; set; }
-        public double HdrBrightnessMultiplier { get; set; }
+        public double HdrGammaMultiplier { get; set; } = 1.0;
+        public double HdrBrightnessMultiplier { get; set; } = 1.0;
         public double WOLEDDesaturationCompensation { get; set; }
     }
 
@@ -826,6 +922,30 @@ namespace MHC2Gen
             var M1 = RgbToXYZ(from);
             var M2 = XYZToRgb(to);
             return M2 * M1;
+        }
+
+        /// <summary>
+        /// Creates Rec2020 primaries adapted to the device's native color characteristics.
+        /// Calculates the delta between native primaries and sRGB/Rec.709, then SUBTRACTS to compensate.
+        /// This corrects for the display's deviation while providing Rec2020's expanded gamut.
+        /// Uses sRGB as base since most SDR content (YouTube, etc.) is mastered for sRGB/Rec.709.
+        /// </summary>
+        private static RgbPrimaries CalculateRec2020Native(RgbPrimaries devicePrimaries)
+        {
+            var srgb = RgbPrimaries.sRGB;
+            var rec2020 = RgbPrimaries.Rec2020;
+
+            // Compensate: Rec2020 - (Native - sRGB) = Rec2020 + (sRGB - Native)
+            // If display renders red more saturated than sRGB, pull Rec2020 red back
+            return new RgbPrimaries(
+                new CIExy { x = rec2020.Red.x + (srgb.Red.x - devicePrimaries.Red.x),
+                            y = rec2020.Red.y + (srgb.Red.y - devicePrimaries.Red.y) },
+                new CIExy { x = rec2020.Green.x + (srgb.Green.x - devicePrimaries.Green.x),
+                            y = rec2020.Green.y + (srgb.Green.y - devicePrimaries.Green.y) },
+                new CIExy { x = rec2020.Blue.x + (srgb.Blue.x - devicePrimaries.Blue.x),
+                            y = rec2020.Blue.y + (srgb.Blue.y - devicePrimaries.Blue.y) },
+                rec2020.White  // Keep D65 white point protected
+            );
         }
 
         public string GetDeviceDescription()
@@ -1259,6 +1379,7 @@ namespace MHC2Gen
                 ColorGamut.P3 => RgbPrimaries.P3D65,
                 ColorGamut.Rec2020 => RgbPrimaries.Rec2020,
                 ColorGamut.AdobeRGB => RgbPrimaries.AdobeRGB,
+                ColorGamut.Rec2020Native => CalculateRec2020Native(devicePrimaries),
                 _ => devicePrimaries
             };
 
@@ -1280,43 +1401,32 @@ namespace MHC2Gen
                 Lr /= lumSum; Lg /= lumSum; Lb /= lumSum;
 
                 // Saturation boost (gamut expansion)
-                const double satBoost = 1.1; // (1.0 = no change, >1 increases saturation)
+                double satBoost; // (1.0 = no change, >1 increases saturation)
+                if (command.ColorGamut == ColorGamut.Rec2020)
+                {
+                    satBoost = 0.95;
+                }
+                else if (command.ColorGamut == ColorGamut.Native)
+                {
+                    satBoost = 1.05;
+                }
+                else
+                {
+                    satBoost = 1.0;
+                }
+
                 var saturation_matrix = DenseMatrix.OfArray(new double[,] {
                     { satBoost + (1 - satBoost) * Lr, (1 - satBoost) * Lg, (1 - satBoost) * Lb },
                     { (1 - satBoost) * Lr, satBoost + (1 - satBoost) * Lg, (1 - satBoost) * Lb },
                     { (1 - satBoost) * Lr, (1 - satBoost) * Lg, satBoost + (1 - satBoost) * Lb }
                 });
                 user_matrix = saturation_matrix * user_matrix;
-
-                // Contrast boost anchored at white (keeps max brightness, crushes shadows)
-                // Formula: output = (input - 1.0) * contrast + 1.0 = input * contrast + (1 - contrast)
-                const double contrastBoost = 1.0; // (1.0 = no change, >1 increases contrast)
-                for (int row = 0; row < 3; row++)
-                {
-                    for (int col = 0; col < 3; col++)
-                    {
-                        user_matrix[row, col] *= contrastBoost;
-                    }
-                }
             }
 
-            // Offset anchored at display peak brightness in PQ space
-            const double contrastForOffset = 1.0; // Must match contrastBoost above
-            // Inline PQ calculation: L is normalized luminance (nits / 10000)
-            double L = command.WhiteLuminance / 10000.0;
-            double m1 = 0.1593017578125;
-            double m2 = 78.84375;
-            double c1 = 0.8359375;
-            double c2 = 18.8515625;
-            double c3 = 18.6875;
-            double Lm1 = Math.Pow(L, m1);
-            double whitePointPQ = Math.Pow((c1 + c2 * Lm1) / (1 + c3 * Lm1), m2);
-            double contrastOffset = whitePointPQ * (1.0 - contrastForOffset);
-
             var mhc2_matrix = new double[,] {
-               { user_matrix[0,0], user_matrix[0,1], user_matrix[0,2], contrastOffset },
-               { user_matrix[1,0], user_matrix[1,1], user_matrix[1,2], contrastOffset },
-               { user_matrix[2,0], user_matrix[2,1], user_matrix[2,2], contrastOffset },
+               { user_matrix[0,0], user_matrix[0,1], user_matrix[0,2], 0 },
+               { user_matrix[1,0], user_matrix[1,1], user_matrix[1,2], 0 },
+               { user_matrix[2,0], user_matrix[2,1], user_matrix[2,2], 0 },
             };
 
             MHC2 = new MHC2Tag
@@ -1329,15 +1439,23 @@ namespace MHC2Gen
             {
                 if (command.SDRTransferFunction == SDRTransferFunction.Piecewise)
                 {
-                    MHC2.ApplyPiecewise(command.SDRBrightnessBoost);
+                    MHC2.ApplyPiecewise(command.SDRBrightnessBoost, command.MinCLL);
+
+                    // Apply S-curve contrast (1.0 = no change, >1 = more contrast)
+                    //const double contrastSCurve = 1.25;
+                    //MHC2.ApplyContrastSCurve(contrastSCurve);
                 }
                 else if (command.SDRTransferFunction == SDRTransferFunction.PurePower)
                 {
-                    MHC2.ApplySdrAcm(command.SDRMaxBrightness, command.SDRMinBrightness, command.Gamma, command.SDRBrightnessBoost, command.ShadowDetailBoost);
+                    MHC2.ApplySdrAcm(command.SDRMaxBrightness, command.SDRMinBrightness, command.Gamma, command.SDRBrightnessBoost, command.ShadowDetailBoost, command.MinCLL);
                 }
                 else if (command.SDRTransferFunction == SDRTransferFunction.BT_1886)
                 {
-                    MHC2.ApplySdrAcm(120, 0.0007, 2.4, command.SDRBrightnessBoost, command.ShadowDetailBoost);
+                    MHC2.ApplySdrAcm(120, command.MinCLL, 2.2, command.SDRBrightnessBoost, command.ShadowDetailBoost, command.MinCLL);
+
+                    // Apply S-curve contrast (1.0 = no change, >1 = more contrast)
+                    const double contrastSCurve = 1.2;
+                    MHC2.ApplyContrastSCurve(contrastSCurve);
                 }
                 else if (command.SDRTransferFunction == SDRTransferFunction.ToneMappedPiecewise)
                 {
@@ -1365,8 +1483,13 @@ namespace MHC2Gen
                         maxOutputNits: to_nits,
                         contrastPivotNits: contrastPivot,
                         brightnessMultiplier: command.HdrBrightnessMultiplier,
-                        maxBrightnessCompression: 1.0
+                        maxBrightnessCompression: 1.0,
+                        minCLL: command.MinCLL
                     );
+
+                    // Apply S-curve contrast (1.0 = no change, >1 = more contrast)
+                    const double contrastSCurve = 1.25;
+                    MHC2.ApplyContrastSCurve(contrastSCurve);
 
                     MHC2.ApplyWOLEDDesaturationCompensation(95);
                 }
@@ -1379,7 +1502,7 @@ namespace MHC2Gen
                 }
                 else
                 {
-                    MHC2.ApplyPiecewise(command.SDRBrightnessBoost);
+                    MHC2.ApplyPiecewise(command.SDRBrightnessBoost, command.MinCLL);
                 }
             }
 

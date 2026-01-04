@@ -10,7 +10,7 @@ public class GenerateProfileCommand
     public RgbPrimaries DevicePrimaries { get; set; } = new RgbPrimaries(RgbPrimaries.sRGB);
     public SDRTransferFunction SDRTransferFunction { get; set; }
     public ColorGamut ColorGamut { get; set; }
-    public double MinCLL { get; set; }
+    public double MinCLL { get; set; } = 0.00248;
     public double MaxCLL { get; set; }
     public double WhiteLuminance { get; set; } = 1300;
     public double BlackLuminance { get; set; }
@@ -23,8 +23,8 @@ public class GenerateProfileCommand
     public double ToneMappingFromLuminance { get; set; }
     public double ToneMappingToLuminance { get; set; }
 
-    public double HdrGammaMultiplier { get; set; }
-    public double HdrBrightnessMultiplier { get; set; }
+    public double HdrGammaMultiplier { get; set; } = 1.0;
+    public double HdrBrightnessMultiplier { get; set; } = 1.0;
 
     /// <summary>
     /// WOLED desaturation compensation strength (0-100). 

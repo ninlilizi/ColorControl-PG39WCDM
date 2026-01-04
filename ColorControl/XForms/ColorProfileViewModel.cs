@@ -73,19 +73,19 @@ internal class ColorProfileViewModel : BaseViewModel
 	public Dictionary<ColorGamut, string> ColorGamuts { get; } = Utils.EnumToDictionary<ColorGamut>();
 	public ColorGamut ColorGamut { get; set; } = ColorGamut.Native;
 	public Dictionary<SDRTransferFunction, string> SDRTransferFunctions { get; } = Utils.EnumToDictionary<SDRTransferFunction>();
-	public SDRTransferFunction SDRTransferFunction { get; set; } = SDRTransferFunction.ToneMappedPiecewise;
+	public SDRTransferFunction SDRTransferFunction { get; set; } = SDRTransferFunction.BT_1886;
 	[Range(0.1, 10)]
-	public double CustomGamma { get; set; } = 2.40;
+	public double CustomGamma { get; set; } = 2.20;
 	[Range(0, 10)]
-	public double MinCLL { get; set; } = 0.0007171630859375;
+	public double MinCLL { get; set; } = 0.00248;
 	[Range(11, 10000)]
 	public double MaxCLL { get; set; } = 1300;
 	[Range(0, 10)]
-	public double BlackLuminance { get; set; } = 0.0007171630859375;
+	public double BlackLuminance { get; set; } = 0.00248;
 	[Range(11, 10000)]
 	public double WhiteLuminance { get; set; } = 265;
 	[Range(0, 10)]
-	public double SDRMinBrightness { get; set; } = 0.0007171630859375;
+	public double SDRMinBrightness { get; set; } = 0.0;
 	[Range(11, 10000)]
 	public double SDRMaxBrightness { get; set; } = 100;
 	[Range(-50, 50)]

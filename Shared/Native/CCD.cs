@@ -726,7 +726,8 @@ namespace ColorControl.Shared.Native
 
                     var divider = colorParams.RedPointX <= 1 << 10 ? 1 << 10 : 1 << 20;
 
-                    colorParams.MinLuminance = (uint)(0.0007171630859375f * 10000);
+                    //colorParams.MinLuminance = (uint)(0.0007171630859375f * 10000);
+                    colorParams.MinLuminance = (uint)(0.0f * 10000);
                     colorParams.MaxLuminance = (uint)(1300.0f * 10000);
                     colorParams.MaxFullFrameLuminance = (uint)(265.0f * 10000);
                     colorParams.WhitePointX = (uint)(0.31269932f * divider);

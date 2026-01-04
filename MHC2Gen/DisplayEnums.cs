@@ -39,5 +39,7 @@ public enum ColorGamut
     sRGB = 1,
     P3 = 2,
     Rec2020 = 3,
-    AdobeRGB = 4
+    AdobeRGB = 4,
+    [Description("Rec2020 (Native Adapted)")]
+    Rec2020Native = 5
 }
