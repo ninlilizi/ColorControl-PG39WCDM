@@ -90,7 +90,7 @@ namespace MHC2Gen
             // Use PQ-normalized minCLL instead of raw nits for perceptually uniform contribution
             double normalizedMinCLL = PQ(minCLL / 10000.0);
             shadowDimFactor += normalizedMinCLL;
-            const double linearThreshold = 1.0;       // Above this: no dimming
+            const double linearThreshold = 1.5;       // Above this: no dimming
             const double expOnlyThreshold = 0.5;      // Below this: pure exponential
             const double expDecayRate = 3.0;          // Controls exponential steepness
 
@@ -103,7 +103,7 @@ namespace MHC2Gen
             // is perceptually uniform — linear-nits parameterization concentrates the
             // steepest gradient where PQ has the most resolution (near black), causing
             // a visible luminance cliff on WOLED panels for SDR/gamma content.
-            const double toeBlendNits = 1.0;
+            const double toeBlendNits = 1.5;
 
             RegammaLUT = new double[3, lutSize];
 
