@@ -94,9 +94,14 @@ namespace MHC2Gen
             const double expOnlyThreshold = 0.5;      // Below this: pure exponential
             const double expDecayRate = 3.0;          // Controls exponential steepness
 
-            
-
             double blackLevelPQ = PQ(minCLL / 10000.0);
+
+            // Smooth toe blend zone above minCLL (in nits).
+            // Instead of a hard clamp at minCLL that creates a flat-to-rising kink,
+            // we smoothly transition from blackLevelPQ to the shadow-dimmed curve value
+            // using a Hermite smoothstep (zero derivative at both endpoints).
+            // This eliminates the visible luminance cliff on WOLED panels near black.
+            const double toeBlendNits = 0.05;
 
             RegammaLUT = new double[3, lutSize];
 
@@ -119,25 +124,35 @@ namespace MHC2Gen
 
                 double finalValue;
 
-                if (L_in <= minCLL)
-                {
-                    // Below black level - clamp
-                    finalValue = blackLevelPQ;
-                }
-                else if (L_in >= linearThreshold)
+                if (L_in >= linearThreshold)
                 {
                     // Above linear threshold - no dimming, pass through
                     finalValue = value;
                 }
                 else
                 {
-                    // Calculate exponential-dimmed value
-                    double distance = L_in - minCLL;
+                    // Calculate exponential-dimmed value for this luminance level
+                    double distance = Math.Max(L_in - minCLL, 0.0);
                     double dimMultiplier = 1.0 - (1.0 - shadowDimFactor) * Math.Exp(-expDecayRate * distance);
                     double L_exp = L_in * dimMultiplier;
                     double expValue = PQ(Math.Max(L_exp, minCLL) / 10000.0);
 
-                    if (L_in <= expOnlyThreshold)
+                    if (L_in <= minCLL)
+                    {
+                        // Below black level - clamp
+                        finalValue = blackLevelPQ;
+                    }
+                    else if (L_in < minCLL + toeBlendNits)
+                    {
+                        // Smooth toe zone: Hermite smoothstep from blackLevelPQ to
+                        // the shadow-dimmed curve value. Zero derivative at both ends
+                        // ensures no visible kink at the clamp boundary or at the
+                        // transition into the regular exponential zone.
+                        double t = (L_in - minCLL) / toeBlendNits;
+                        double smoothT = t * t * (3.0 - 2.0 * t);
+                        finalValue = blackLevelPQ + smoothT * (expValue - blackLevelPQ);
+                    }
+                    else if (L_in <= expOnlyThreshold)
                     {
                         // Pure exponential zone
                         finalValue = expValue;

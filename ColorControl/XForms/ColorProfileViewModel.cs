@@ -77,11 +77,12 @@ internal class ColorProfileViewModel : BaseViewModel
 	[Range(0.1, 10)]
 	public double CustomGamma { get; set; } = 2.20;
 	[Range(0, 10)]
-	public double MinCLL { get; set; } = 0.00248;
+	// public double MinCLL { get; set; } = 0.00248; // Min panel can display
+	public double MinCLL { get; set; } = 0.0034; // Toe cliff
 	[Range(11, 10000)]
 	public double MaxCLL { get; set; } = 1300;
 	[Range(0, 10)]
-	public double BlackLuminance { get; set; } = 0.00248;
+	public double BlackLuminance { get; set; } = 0.0;
 	[Range(11, 10000)]
 	public double WhiteLuminance { get; set; } = 265;
 	[Range(0, 10)]
