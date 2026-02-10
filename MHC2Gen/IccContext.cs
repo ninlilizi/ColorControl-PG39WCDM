@@ -103,7 +103,7 @@ namespace MHC2Gen
             // is perceptually uniform — linear-nits parameterization concentrates the
             // steepest gradient where PQ has the most resolution (near black), causing
             // a visible luminance cliff on WOLED panels for SDR/gamma content.
-            const double toeBlendNits = 0.15;
+            const double toeBlendNits = 1.0;
 
             RegammaLUT = new double[3, lutSize];
 
