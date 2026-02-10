@@ -98,10 +98,12 @@ namespace MHC2Gen
 
             // Smooth toe blend zone above minCLL (in nits).
             // Instead of a hard clamp at minCLL that creates a flat-to-rising kink,
-            // we smoothly transition from blackLevelPQ to the shadow-dimmed curve value
-            // using a Hermite smoothstep (zero derivative at both endpoints).
-            // This eliminates the visible luminance cliff on WOLED panels near black.
-            const double toeBlendNits = 0.05;
+            // we smoothly transition from blackLevelPQ to the shadow-dimmed curve value.
+            // The blend is parameterized in PQ space (not linear nits) so the transition
+            // is perceptually uniform — linear-nits parameterization concentrates the
+            // steepest gradient where PQ has the most resolution (near black), causing
+            // a visible luminance cliff on WOLED panels for SDR/gamma content.
+            const double toeBlendNits = 0.15;
 
             RegammaLUT = new double[3, lutSize];
 
@@ -144,11 +146,15 @@ namespace MHC2Gen
                     }
                     else if (L_in < minCLL + toeBlendNits)
                     {
-                        // Smooth toe zone: Hermite smoothstep from blackLevelPQ to
-                        // the shadow-dimmed curve value. Zero derivative at both ends
-                        // ensures no visible kink at the clamp boundary or at the
-                        // transition into the regular exponential zone.
-                        double t = (L_in - minCLL) / toeBlendNits;
+                        // Smooth toe zone: blend from blackLevelPQ to the shadow-dimmed
+                        // curve value. Parameterized in PQ space for perceptual uniformity —
+                        // linear-nits parameterization places the steepest gradient at
+                        // ~0.027 nits where PQ sensitivity is highest, causing a visible cliff.
+                        // Hermite smoothstep (zero derivative at both endpoints) works correctly
+                        // for both native PQ and gamma-mapped-to-PQ content.
+                        double pqIn = PQ(L_in / 10000.0);
+                        double pqToeEnd = PQ((minCLL + toeBlendNits) / 10000.0);
+                        double t = Math.Clamp((pqIn - blackLevelPQ) / (pqToeEnd - blackLevelPQ), 0.0, 1.0);
                         double smoothT = t * t * (3.0 - 2.0 * t);
                         finalValue = blackLevelPQ + smoothT * (expValue - blackLevelPQ);
                     }
