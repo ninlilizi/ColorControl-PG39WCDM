@@ -148,14 +148,18 @@ namespace MHC2Gen
                     {
                         // Smooth toe zone: blend from blackLevelPQ to the shadow-dimmed
                         // curve value. Parameterized in PQ space for perceptual uniformity —
-                        // linear-nits parameterization places the steepest gradient at
-                        // ~0.027 nits where PQ sensitivity is highest, causing a visible cliff.
-                        // Hermite smoothstep (zero derivative at both endpoints) works correctly
-                        // for both native PQ and gamma-mapped-to-PQ content.
+                        // linear-nits parameterization concentrates the steepest gradient
+                        // where PQ has the most resolution (near black).
+                        // Uses quadratic ease-out t(2-t) instead of Hermite smoothstep:
+                        //  - Zero derivative at t=1: smooth join into the main curve
+                        //  - Non-zero derivative at t=0: rises immediately from black,
+                        //    preventing the flat zone where many low-luminance bars
+                        //    collapse to the same output (the kink at minCLL ~0.0025 nits
+                        //    is far below display visibility)
                         double pqIn = PQ(L_in / 10000.0);
                         double pqToeEnd = PQ((minCLL + toeBlendNits) / 10000.0);
                         double t = Math.Clamp((pqIn - blackLevelPQ) / (pqToeEnd - blackLevelPQ), 0.0, 1.0);
-                        double smoothT = t * t * (3.0 - 2.0 * t);
+                        double smoothT = t * (2.0 - t);
                         finalValue = blackLevelPQ + smoothT * (expValue - blackLevelPQ);
                     }
                     else if (L_in <= expOnlyThreshold)
