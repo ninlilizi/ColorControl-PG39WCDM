@@ -150,16 +150,16 @@ namespace MHC2Gen
                         // curve value. Parameterized in PQ space for perceptual uniformity —
                         // linear-nits parameterization concentrates the steepest gradient
                         // where PQ has the most resolution (near black).
-                        // Uses quadratic ease-out t(2-t) instead of Hermite smoothstep:
+                        // Uses cubic ease-out 1-(1-t)^3 for maximum low-end differentiation:
                         //  - Zero derivative at t=1: smooth join into the main curve
-                        //  - Non-zero derivative at t=0: rises immediately from black,
-                        //    preventing the flat zone where many low-luminance bars
-                        //    collapse to the same output (the kink at minCLL ~0.0025 nits
-                        //    is far below display visibility)
+                        //  - Slope 3 at t=0: rises 50% faster than quadratic ease-out,
+                        //    pushing more curve energy into the sub-0.1 nit range where
+                        //    WOLED panels have the least headroom for differentiation
                         double pqIn = PQ(L_in / 10000.0);
                         double pqToeEnd = PQ((minCLL + toeBlendNits) / 10000.0);
                         double t = Math.Clamp((pqIn - blackLevelPQ) / (pqToeEnd - blackLevelPQ), 0.0, 1.0);
-                        double smoothT = t * (2.0 - t);
+                        double oneMinusT = 1.0 - t;
+                        double smoothT = 1.0 - oneMinusT * oneMinusT * oneMinusT;
                         finalValue = blackLevelPQ + smoothT * (expValue - blackLevelPQ);
                     }
                     else if (L_in <= expOnlyThreshold)
