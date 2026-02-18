@@ -23,14 +23,10 @@ public enum DisplayPrimariesSource
 
 public enum SDRTransferFunction
 {
-    [Description("BT.1886")]
-    BT_1886 = 0,
-    [Description("Pure Power")]
-    PurePower = 1,
+    [Description("Corrected Gamma 2.2 Piecewise")]
+    CorrectedGamma22Piecewise = 0,
     [Description("Piecewise")]
     Piecewise = 2,
-    [Description("Tone Mapped Piecewise")]
-    ToneMappedPiecewise = 3
 }
 
 public enum ColorGamut

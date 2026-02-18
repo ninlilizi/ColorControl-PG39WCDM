@@ -73,7 +73,7 @@ internal class ColorProfileViewModel : BaseViewModel
 	public Dictionary<ColorGamut, string> ColorGamuts { get; } = Utils.EnumToDictionary<ColorGamut>();
 	public ColorGamut ColorGamut { get; set; } = ColorGamut.Rec2020Native;
 	public Dictionary<SDRTransferFunction, string> SDRTransferFunctions { get; } = Utils.EnumToDictionary<SDRTransferFunction>();
-	public SDRTransferFunction SDRTransferFunction { get; set; } = SDRTransferFunction.BT_1886;
+	public SDRTransferFunction SDRTransferFunction { get; set; } = SDRTransferFunction.CorrectedGamma22Piecewise;
 	[Range(0.1, 10)]
 	public double CustomGamma { get; set; } = 2.20;
 	[Range(0, 10)]
@@ -144,37 +144,12 @@ internal class ColorProfileViewModel : BaseViewModel
 			}
 			else if (columnName == nameof(SDRTransferFunction))
 			{
-				if (SDRTransferFunction == SDRTransferFunction.PurePower)
-				{
-					SDRSettingsEnabled = true;
-					ToneMappingSettingsEnabled = false;
-					BrightnessBoostSettingsEnabled = true;
-					OnPropertyChanged(nameof(SDRSettingsEnabled));
-					OnPropertyChanged(nameof(ToneMappingSettingsEnabled));
-					OnPropertyChanged(nameof(BrightnessBoostSettingsEnabled));
-				}
-				else if (SDRTransferFunction == SDRTransferFunction.ToneMappedPiecewise)
-				{
-
-					ToneMappingSettingsEnabled = true;
-					SDRSettingsEnabled = false;
-					BrightnessBoostSettingsEnabled = false;
-					OnPropertyChanged(nameof(ToneMappingSettingsEnabled));
-					OnPropertyChanged(nameof(SDRSettingsEnabled));
-					OnPropertyChanged(nameof(BrightnessBoostSettingsEnabled));
-				}
-				else
-				{
-					ToneMappingSettingsEnabled = false;
-					SDRSettingsEnabled = false;
-					BrightnessBoostSettingsEnabled = true;
-					OnPropertyChanged(nameof(ToneMappingSettingsEnabled));
-					OnPropertyChanged(nameof(SDRSettingsEnabled));
-					OnPropertyChanged(nameof(BrightnessBoostSettingsEnabled));
-				}
-
-
-
+				ToneMappingSettingsEnabled = false;
+				SDRSettingsEnabled = false;
+				BrightnessBoostSettingsEnabled = true;
+				OnPropertyChanged(nameof(ToneMappingSettingsEnabled));
+				OnPropertyChanged(nameof(SDRSettingsEnabled));
+				OnPropertyChanged(nameof(BrightnessBoostSettingsEnabled));
 			}
 			else if (columnName == nameof(SelectedExistingProfile))
 			{

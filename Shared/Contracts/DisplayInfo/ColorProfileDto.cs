@@ -53,7 +53,7 @@ public class ColorProfileDto
 			WhiteLuminance = 1300,
 			SDRMinBrightness = 0,
 			SDRMaxBrightness = 100,
-			SDRTransferFunction = isHdrProfile ? SDRTransferFunction.Piecewise : SDRTransferFunction.PurePower
+			SDRTransferFunction = isHdrProfile ? SDRTransferFunction.Piecewise : SDRTransferFunction.CorrectedGamma22Piecewise
 		};
 	}
 }

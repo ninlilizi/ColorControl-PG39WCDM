@@ -72,7 +72,7 @@ namespace ColorControl.Shared.Contracts
 			XFormWidth = 1280;
 			XFormHeight = 720;
 			MinimizeToTray = true;
-			CheckForUpdates = true;
+			CheckForUpdates = false;
 			FixChromeFonts = false;
 			UseGdiScaling = true;
 			UseDedicatedElevatedProcess = false;

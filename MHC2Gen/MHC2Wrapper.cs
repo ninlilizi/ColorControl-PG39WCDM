@@ -139,7 +139,7 @@ public class MHC2Wrapper
             MaxCLL = deviceContext.MHC2?.MaxCLL ?? deviceContext.max_nits,
             SDRMinBrightness = deviceContext.ExtraInfoTag?.SDRMinBrightness ?? 0,
             SDRMaxBrightness = deviceContext.ExtraInfoTag?.SDRMaxBrightness ?? 100,
-            SDRTransferFunction = deviceContext.ExtraInfoTag?.SDRTransferFunction ?? SDRTransferFunction.ToneMappedPiecewise,
+            SDRTransferFunction = deviceContext.ExtraInfoTag?.SDRTransferFunction ?? SDRTransferFunction.Piecewise,
             SDRBrightnessBoost = deviceContext.ExtraInfoTag?.SDRBrightnessBoost ?? 0,
             ShadowDetailBoost = deviceContext.ExtraInfoTag?.ShadowDetailBoost ?? 0,
             Gamma = deviceContext.ExtraInfoTag?.Gamma ?? 2.4,
