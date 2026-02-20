@@ -82,28 +82,16 @@ namespace MHC2Gen
             var lutSize = 4096; // Increased from 1024 to 4096 for maximum accuracy
             var amplifier = boostPercentage == 0 ? 1 : 1 + boostPercentage / 100;
 
-            // Shadow dimming with three zones:
-            // - Above linearThreshold: pure linear (no dimming)
-            // - Between expOnlyThreshold and linearThreshold: blend from exponential to linear
-            // - Below expOnlyThreshold: pure exponential dimming
-            double shadowDimFactor = 1.0;             // 0.5 = half brightness at black
-            // Use PQ-normalized minCLL instead of raw nits for perceptually uniform contribution
-            double normalizedMinCLL = PQ(minCLL / 10000.0);
-            shadowDimFactor += normalizedMinCLL;
-            const double linearThreshold = 1.5;       // Above this: no dimming
-            const double expOnlyThreshold = 0.5;      // Below this: pure exponential
-            const double expDecayRate = 3.0;          // Controls exponential steepness
-
             double blackLevelPQ = PQ(minCLL / 10000.0);
 
-            // Smooth toe blend zone above minCLL (in nits).
-            // Instead of a hard clamp at minCLL that creates a flat-to-rising kink,
-            // we smoothly transition from blackLevelPQ to the shadow-dimmed curve value.
-            // The blend is parameterized in PQ space (not linear nits) so the transition
-            // is perceptually uniform — linear-nits parameterization concentrates the
-            // steepest gradient where PQ has the most resolution (near black), causing
-            // a visible luminance cliff on WOLED panels for SDR/gamma content.
-            const double toeBlendNits = 1.5;
+            // Corrective toe: scales the gamma-corrected curve toward black,
+            // preserving its natural gradient shape (even bar spacing) while
+            // pulling luminance down to counteract the monitor's hot shadows.
+            // toeDimFactor: how much to dim at the very bottom (0 = full black,
+            // 1 = no correction). Ramps linearly to 1.0 at the toe boundary.
+            const double toeBlendNits = 8.0;
+            const double toeDimFactor = 0.1;
+            double toeLogRange = Math.Log((minCLL + toeBlendNits) / minCLL);
 
             RegammaLUT = new double[3, lutSize];
 
@@ -126,54 +114,27 @@ namespace MHC2Gen
 
                 double finalValue;
 
-                if (L_in >= linearThreshold)
+                if (L_in <= minCLL)
                 {
-                    // Above linear threshold - no dimming, pass through
-                    finalValue = value;
+                    // Below black level - clamp
+                    finalValue = blackLevelPQ;
+                }
+                else if (L_in < minCLL + toeBlendNits)
+                {
+                    // Scale the gamma-corrected value toward blackLevelPQ.
+                    // This preserves the curve's natural gradient shape while
+                    // pulling luminance down. Factor ramps from toeDimFactor
+                    // at minCLL to 1.0 at the toe boundary (seamless join).
+                    double t = Math.Log(L_in / minCLL) / toeLogRange;
+                    double factor = toeDimFactor + (1.0 - toeDimFactor) * t;
+                    finalValue = blackLevelPQ + factor * (value - blackLevelPQ);
                 }
                 else
                 {
-                    // Calculate exponential-dimmed value for this luminance level
-                    double distance = Math.Max(L_in - minCLL, 0.0);
-                    double dimMultiplier = 1.0 - (1.0 - shadowDimFactor) * Math.Exp(-expDecayRate * distance);
-                    double L_exp = L_in * dimMultiplier;
-                    double expValue = PQ(Math.Max(L_exp, minCLL) / 10000.0);
-
-                    if (L_in <= minCLL)
-                    {
-                        // Below black level - clamp
-                        finalValue = blackLevelPQ;
-                    }
-                    else if (L_in < minCLL + toeBlendNits)
-                    {
-                        // Smooth toe zone: blend from blackLevelPQ to the shadow-dimmed
-                        // curve value. Parameterized in PQ space for perceptual uniformity —
-                        // linear-nits parameterization concentrates the steepest gradient
-                        // where PQ has the most resolution (near black).
-                        // Uses cubic ease-out 1-(1-t)^3 for maximum low-end differentiation:
-                        //  - Zero derivative at t=1: smooth join into the main curve
-                        //  - Slope 3 at t=0: rises 50% faster than quadratic ease-out,
-                        //    pushing more curve energy into the sub-0.1 nit range where
-                        //    WOLED panels have the least headroom for differentiation
-                        double pqIn = PQ(L_in / 10000.0);
-                        double pqToeEnd = PQ((minCLL + toeBlendNits) / 10000.0);
-                        double t = Math.Clamp((pqIn - blackLevelPQ) / (pqToeEnd - blackLevelPQ), 0.0, 1.0);
-                        double oneMinusT = 1.0 - t;
-                        double smoothT = 1.0 - oneMinusT * oneMinusT * oneMinusT;
-                        finalValue = blackLevelPQ + smoothT * (expValue - blackLevelPQ);
-                    }
-                    else if (L_in <= expOnlyThreshold)
-                    {
-                        // Pure exponential zone
-                        finalValue = expValue;
-                    }
-                    else
-                    {
-                        // Blend zone: smoothstep from exponential to linear
-                        double blendT = (L_in - expOnlyThreshold) / (linearThreshold - expOnlyThreshold);
-                        double smoothBlend = blendT * blendT * (3.0 - 2.0 * blendT);
-                        finalValue = expValue * (1.0 - smoothBlend) + value * smoothBlend;
-                    }
+                    // Above toe - pass through the gamma-corrected curve.
+                    // The SrgbAcm correction pulls values down to counteract
+                    // the monitor's excessively bright native shadow response.
+                    finalValue = value;
                 }
 
                 finalValue = Math.Clamp(finalValue, blackLevelPQ, 1.0);
