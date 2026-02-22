@@ -87,77 +87,58 @@ namespace MHC2Gen
         /// <param name="title">Optional title for the LUT</param>
         public static void GenerateHdrCubeLut(GenerateProfileCommand command, string filePath, int lutSize = 65, string? title = null)
         {
-            // Create device profile following the existing PQ10 decode pattern
+            // Create the profile using the same CreateIcc path as the ICC profile,
+            // so the .cube file gets the identical RegammaLUT (including toe correction,
+            // S-curve contrast, and WOLED desaturation compensation).
             var profile = IccProfile.Create_sRGB();
             var context = new DeviceIccContext(profile);
-            
-            // Use the existing CreatePQ10DecodeIcc method as reference for HDR handling
-            var pq10Profile = context.CreatePQ10DecodeIcc(command.MaxCLL, command.MinCLL);
-            
+            context.CreateIcc(command);
+
+            if (context.MHC2?.RegammaLUT == null || context.MHC2?.Matrix3x4 == null)
+                throw new InvalidOperationException("Failed to create MHC2 tag with valid LUT and matrix data");
+
+            var mhc2Tag = context.MHC2;
+            var regammaLutSize = mhc2Tag.RegammaLUT.GetLength(1);
+
             using var writer = new StreamWriter(filePath, false, Encoding.UTF8);
-            
+
             // Write .cube header with HDR-specific metadata
-            var lutTitle = title ?? $"ColorControl HDR LUT (BT.2020/ST2084) - {command.Description}";
+            var lutTitle = title ?? $"ColorControl HDR LUT (MHC2) - {command.Description}";
             writer.WriteLine($"TITLE \"{lutTitle}\"");
             writer.WriteLine("DOMAIN_MIN 0.0 0.0 0.0");
             writer.WriteLine("DOMAIN_MAX 1.0 1.0 1.0");
             writer.WriteLine($"LUT_3D_SIZE {lutSize}");
             writer.WriteLine("# HDR LUT using BT.2020 color space and SMPTE ST 2084 (PQ) encoding");
-            writer.WriteLine($"# Max luminance: {command.MaxCLL} cd/m²");
-            writer.WriteLine($"# Min luminance: {command.MinCLL} cd/m²");
+            writer.WriteLine($"# Max luminance: {command.MaxCLL} cd/mï¿½");
+            writer.WriteLine($"# Min luminance: {command.MinCLL} cd/mï¿½");
             writer.WriteLine();
             
-            // Create color transform using BT.2020 as source
-            var ctx = new CmsContext();
-            var bt2020Profile = IccProfile.Create_sRGB(); // We'll manually handle the BT.2020 color space conversion
-            var transform = new CmsTransform(ctx, bt2020Profile, CmsPixelFormat.RGBDouble, pq10Profile, CmsPixelFormat.RGBDouble, RenderingIntent.PERCEPTUAL, default);
-            
-            // Generate LUT data with PQ encoding
+            // Generate LUT data by applying the same MHC2 transformation as the ICC profile
             for (int b = 0; b < lutSize; b++)
             {
                 for (int g = 0; g < lutSize; g++)
                 {
                     for (int r = 0; r < lutSize; r++)
                     {
-                        // Calculate normalized RGB input values (0.0 to 1.0 representing PQ-encoded values)
-                        double inputR_PQ = (double)r / (lutSize - 1);
-                        double inputG_PQ = (double)g / (lutSize - 1);
-                        double inputB_PQ = (double)b / (lutSize - 1);
-                        
-                        // Convert PQ-encoded values to linear values in the proper luminance range
-                        double inputR_Nits = ST2084.SignalToNits(inputR_PQ);
-                        double inputG_Nits = ST2084.SignalToNits(inputG_PQ);
-                        double inputB_Nits = ST2084.SignalToNits(inputB_PQ);
-                        
-                        // Normalize to the working range expected by the profile
-                        double inputR_Linear = Math.Max(inputR_Nits - command.MinCLL, 0) / (command.MaxCLL - command.MinCLL);
-                        double inputG_Linear = Math.Max(inputG_Nits - command.MinCLL, 0) / (command.MaxCLL - command.MinCLL);
-                        double inputB_Linear = Math.Max(inputB_Nits - command.MinCLL, 0) / (command.MaxCLL - command.MinCLL);
-                        
-                        // Apply the color transformation
-                        var input = new[] { inputR_Linear, inputG_Linear, inputB_Linear };
-                        var output = new double[3];
-                        
-                        transform.DoTransform<double, double>(input, output, 1);
-                        
-                        // Convert output back to PQ encoding
-                        // The output is already processed by the device profile, so we convert back to nits and then PQ
-                        double outputR_Nits = output[0] * (command.MaxCLL - command.MinCLL) + command.MinCLL;
-                        double outputG_Nits = output[1] * (command.MaxCLL - command.MinCLL) + command.MinCLL;
-                        double outputB_Nits = output[2] * (command.MaxCLL - command.MinCLL) + command.MinCLL;
-                        
-                        // Apply PQ encoding to output
-                        double outputR_PQ = ST2084.NitsToSignal(Math.Max(0.0, outputR_Nits));
-                        double outputG_PQ = ST2084.NitsToSignal(Math.Max(0.0, outputG_Nits));
-                        double outputB_PQ = ST2084.NitsToSignal(Math.Max(0.0, outputB_Nits));
-                        
-                        // Clamp output values to valid PQ range
-                        outputR_PQ = Math.Max(0.0, Math.Min(1.0, outputR_PQ));
-                        outputG_PQ = Math.Max(0.0, Math.Min(1.0, outputG_PQ));
-                        outputB_PQ = Math.Max(0.0, Math.Min(1.0, outputB_PQ));
-                        
-                        // Write to .cube file with proper formatting
-                        writer.WriteLine($"{outputR_PQ.ToString("F6", CultureInfo.InvariantCulture)} {outputG_PQ.ToString("F6", CultureInfo.InvariantCulture)} {outputB_PQ.ToString("F6", CultureInfo.InvariantCulture)}");
+                        double inputR = (double)r / (lutSize - 1);
+                        double inputG = (double)g / (lutSize - 1);
+                        double inputB = (double)b / (lutSize - 1);
+
+                        // Apply matrix transformation
+                        double transformedR = mhc2Tag.Matrix3x4[0,0] * inputR + mhc2Tag.Matrix3x4[0,1] * inputG + mhc2Tag.Matrix3x4[0,2] * inputB;
+                        double transformedG = mhc2Tag.Matrix3x4[1,0] * inputR + mhc2Tag.Matrix3x4[1,1] * inputG + mhc2Tag.Matrix3x4[1,2] * inputB;
+                        double transformedB = mhc2Tag.Matrix3x4[2,0] * inputR + mhc2Tag.Matrix3x4[2,1] * inputG + mhc2Tag.Matrix3x4[2,2] * inputB;
+
+                        // Apply RegammaLUT (the same 4096-entry LUT with toe correction)
+                        double outputR = ApplyRegammaLUT(transformedR, mhc2Tag.RegammaLUT, 0, regammaLutSize);
+                        double outputG = ApplyRegammaLUT(transformedG, mhc2Tag.RegammaLUT, 1, regammaLutSize);
+                        double outputB = ApplyRegammaLUT(transformedB, mhc2Tag.RegammaLUT, 2, regammaLutSize);
+
+                        outputR = Math.Max(0.0, Math.Min(1.0, outputR));
+                        outputG = Math.Max(0.0, Math.Min(1.0, outputG));
+                        outputB = Math.Max(0.0, Math.Min(1.0, outputB));
+
+                        writer.WriteLine($"{outputR.ToString("F6", CultureInfo.InvariantCulture)} {outputG.ToString("F6", CultureInfo.InvariantCulture)} {outputB.ToString("F6", CultureInfo.InvariantCulture)}");
                     }
                 }
             }
@@ -179,7 +160,7 @@ namespace MHC2Gen
                 Description = command.Description,
                 IsHDRProfile = false, // Force SDR processing
                 MinCLL = 0.0,
-                MaxCLL = 100.0, // Standard SDR white level (100 cd/m²)
+                MaxCLL = 100.0, // Standard SDR white level (100 cd/mï¿½)
                 BlackLuminance = command.BlackLuminance,
                 WhiteLuminance = Math.Min(command.WhiteLuminance, 100.0), // Cap at SDR levels
                 SDRMinBrightness = command.SDRMinBrightness,
@@ -211,8 +192,8 @@ namespace MHC2Gen
             writer.WriteLine("DOMAIN_MAX 1.0 1.0 1.0");
             writer.WriteLine($"LUT_3D_SIZE {lutSize}");
             writer.WriteLine("# SDR LUT using sRGB/Rec.709 color space with gamma encoding");
-            writer.WriteLine($"# Max luminance: {sdrCommand.MaxCLL} cd/m²");
-            writer.WriteLine($"# Min luminance: {sdrCommand.MinCLL} cd/m²");
+            writer.WriteLine($"# Max luminance: {sdrCommand.MaxCLL} cd/mï¿½");
+            writer.WriteLine($"# Min luminance: {sdrCommand.MinCLL} cd/mï¿½");
             writer.WriteLine("# Companion SDR LUT for standard dynamic range workflows");
             writer.WriteLine();
             

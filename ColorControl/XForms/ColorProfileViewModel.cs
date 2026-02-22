@@ -232,13 +232,15 @@ internal class ColorProfileViewModel : BaseViewModel
 				WhitePoint.Y = (double)colorParams.WhitePointY / divider;
 			}
 
-			WhiteLuminance = (double)colorParams.MaxLuminance / 10000;
+			// Always use fixed defaults — the display-reported values vary
+			// between launches and don't reflect the actual panel characteristics.
+			WhiteLuminance = 1300;
 			OnPropertyChanged(nameof(WhiteLuminance));
-			BlackLuminance = (double)colorParams.MinLuminance / 10000;
+			BlackLuminance = 0.0;
 			OnPropertyChanged(nameof(BlackLuminance));
-			MinCLL = BlackLuminance;
+			MinCLL = 0.00248;
 			OnPropertyChanged(nameof(MinCLL));
-			MaxCLL = WhiteLuminance;
+			MaxCLL = 1300;
 			OnPropertyChanged(nameof(MaxCLL));
 		}
 

@@ -127,10 +127,11 @@ internal class MainWorker
 
         _ = _powerEventDispatcher.SendEventAsync(PowerEventDispatcher.Event_Startup);
 
-        if (_config.CheckForUpdates)
-        {
-            _ = _updateManager.CheckForUpdatesAndInstall();
-        }
+        // Disabled — building from source, no need for update notifications
+        //if (_config.CheckForUpdates)
+        //{
+        //    _ = _updateManager.CheckForUpdatesAndInstall();
+        //}
 
         if (!_config.StartMinimized /*|| Debugger.IsAttached*/)
         {

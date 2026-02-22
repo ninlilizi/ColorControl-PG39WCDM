@@ -89,7 +89,7 @@
                     <ColumnDefinition Width="4*"/>
                 </Grid.ColumnDefinitions>
                 <Label Content="MHC2 MinCLL (nits):" HorizontalAlignment="Left" Margin="-3,6,0,0" VerticalAlignment="Top" Width="208" Height="26" Grid.ColumnSpan="2"/>
-                <TextBox Grid.Column="1" HorizontalAlignment="Left" Margin="66,10,0,0" TextWrapping="Wrap" Text="{Binding MinCLL, NotifyOnValidationError=True, ValidatesOnDataErrors=True}" VerticalAlignment="Top" Width="120"  x:Name="tbMinLuminance_Copy" Height="18" InputScope="Number"/>
+                <TextBox Grid.Column="1" HorizontalAlignment="Left" Margin="66,10,0,0" TextWrapping="Wrap" Text="{Binding MinCLL, StringFormat={}{0:F5}, NotifyOnValidationError=True, ValidatesOnDataErrors=True}" VerticalAlignment="Top" Width="120"  x:Name="tbMinLuminance_Copy" Height="18" InputScope="Number"/>
                 <Label Content="MHC2 MaxCLL (nits):" HorizontalAlignment="Left" Margin="201,6,0,0" VerticalAlignment="Top" Width="208" Height="26" Grid.Column="1"/>
                 <TextBox Grid.Column="1" HorizontalAlignment="Left" Margin="400,10,0,0" TextWrapping="Wrap" Text="{Binding MaxCLL, NotifyOnValidationError=True, ValidatesOnDataErrors=True}" VerticalAlignment="Top" Width="120"  x:Name="tbMinLuminance_Copy1" Height="18" InputScope="Number"/>
             </Grid>
