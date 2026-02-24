@@ -92,6 +92,7 @@ namespace MHC2Gen
             const double toeBlendNits = 8.0;
             const double toeDimFactor = 0.1;
             double toeLogRange = Math.Log((minCLL + toeBlendNits) / minCLL);
+            double toeEndPQ = PQ((minCLL + toeBlendNits) / 10000.0);
 
             RegammaLUT = new double[3, lutSize];
 
@@ -127,7 +128,15 @@ namespace MHC2Gen
                     // at minCLL to 1.0 at the toe boundary (seamless join).
                     double t = Math.Log(L_in / minCLL) / toeLogRange;
                     double factor = toeDimFactor + (1.0 - toeDimFactor) * t;
-                    finalValue = blackLevelPQ + factor * (value - blackLevelPQ);
+                    double scaled = blackLevelPQ + factor * (value - blackLevelPQ);
+
+                    // Guaranteed minimum ramp: at the very bottom, 'value' is so
+                    // close to blackLevelPQ that scaling produces indistinguishable
+                    // outputs. This log-parameterized ramp provides a floor of
+                    // differentiation. It only dominates at the very bottom;
+                    // higher up, the scaled value exceeds it and takes over.
+                    double minRamp = blackLevelPQ + t * toeDimFactor * (toeEndPQ - blackLevelPQ);
+                    finalValue = Math.Max(scaled, minRamp);
                 }
                 else
                 {
