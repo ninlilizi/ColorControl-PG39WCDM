@@ -147,7 +147,8 @@ public class MHC2Wrapper
             ToneMappingToLuminance = deviceContext.ExtraInfoTag?.ToneMappingToLuminance ?? 400,
             HdrGammaMultiplier = deviceContext.ExtraInfoTag?.HdrGammaMultiplier ?? 1,
             HdrBrightnessMultiplier = deviceContext.ExtraInfoTag?.HdrBrightnessMultiplier ?? 1,
-            WOLEDDesaturationCompensation = deviceContext.ExtraInfoTag?.WOLEDDesaturationCompensation ?? 0
+            WOLEDDesaturationCompensation = deviceContext.ExtraInfoTag?.WOLEDDesaturationCompensation ?? 0,
+            SaturationBoost = deviceContext.ExtraInfoTag?.SaturationBoost ?? 0.98
         };
     }
 }

@@ -130,6 +130,9 @@ internal class ColorProfileViewModel : BaseViewModel
 	[Range(0, 100)]
 	public double WOLEDDesaturationCompensation { get; set; } = 95;
 
+	[Range(0, 2)]
+	public double SaturationBoost { get; set; } = 0.95;
+
 	public bool GenerateCubeLut { get; set; } = true;
 
 	public override string this[string columnName]

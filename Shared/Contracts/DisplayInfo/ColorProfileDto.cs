@@ -26,6 +26,7 @@ public class ColorProfileDto
     public double HdrGammaMultiplier { get; set; } = 1;
     public double HdrBrightnessMultiplier { get; set; } = 1;
     public double WOLEDDesaturationCompensation { get; set; } = 0;
+    public double SaturationBoost { get; set; } = 0.98;
 
     public void UpdatePrimariesAndLuminance(DisplayColorInfo displayColorInfo)
 	{
@@ -53,7 +54,8 @@ public class ColorProfileDto
 			WhiteLuminance = 1300,
 			SDRMinBrightness = 0,
 			SDRMaxBrightness = 100,
-			SDRTransferFunction = isHdrProfile ? SDRTransferFunction.Piecewise : SDRTransferFunction.CorrectedGamma22Piecewise
+			SDRTransferFunction = isHdrProfile ? SDRTransferFunction.Piecewise : SDRTransferFunction.CorrectedGamma22Piecewise,
+			SaturationBoost = 0.98
 		};
 	}
 }

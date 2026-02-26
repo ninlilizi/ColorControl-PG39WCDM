@@ -177,6 +177,7 @@ public class ColorProfileService
 			SDRTransferFunction = data.SDRTransferFunction,
 			ShadowDetailBoost = data.ShadowDetailBoost,
 			WhiteLuminance = data.WhiteLuminance,
+			SaturationBoost = data.SaturationBoost,
 		};
 	}
 
@@ -203,6 +204,7 @@ public class ColorProfileService
 			ToneMappingToLuminance = colorProfile.ToneMappingToLuminance,
 			HdrBrightnessMultiplier = colorProfile.HdrBrightnessMultiplier,
 			HdrGammaMultiplier = colorProfile.HdrGammaMultiplier,
+			SaturationBoost = colorProfile.SaturationBoost,
 		};
 
 		var bytes = MHC2Wrapper.GenerateSdrAcmProfile(command);

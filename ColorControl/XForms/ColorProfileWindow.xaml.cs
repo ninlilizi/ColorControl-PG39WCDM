@@ -120,7 +120,8 @@ namespace ColorControl.XForms
                 ToneMappingToLuminance = _viewModel.ToneMappingToLuminance,
                 HdrBrightnessMultiplier = _viewModel.HdrBrightnessMultiplier,
                 HdrGammaMultiplier = _viewModel.HdrGammaMultiplier,
-                WOLEDDesaturationCompensation = _viewModel.WOLEDDesaturationCompensation
+                WOLEDDesaturationCompensation = _viewModel.WOLEDDesaturationCompensation,
+                SaturationBoost = _viewModel.SaturationBoost
             };
 
             var bytes = MHC2Wrapper.GenerateSdrAcmProfile(command);
@@ -291,6 +292,7 @@ namespace ColorControl.XForms
             _viewModel.SDRBrightnessBoost = profileProperties.SDRBrightnessBoost;
             _viewModel.MinCLL = profileProperties.MinCLL;
             _viewModel.MaxCLL = profileProperties.MaxCLL;
+            _viewModel.SaturationBoost = profileProperties.SaturationBoost;
 
             _viewModel.Update();
         }

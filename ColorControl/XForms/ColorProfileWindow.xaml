@@ -68,6 +68,9 @@
                 <Label Content="Brightness boost (%):" HorizontalAlignment="Left" Margin="-5,64,0,0" VerticalAlignment="Top" Width="208" Height="26" Grid.ColumnSpan="2"/>
                 <TextBox IsEnabled="{Binding BrightnessBoostSettingsEnabled}" Grid.Column="1" HorizontalAlignment="Left" Margin="69,68,0,0" TextWrapping="Wrap" Text="{Binding SDRBrightnessBoost, NotifyOnValidationError=True, ValidatesOnDataErrors=True}" VerticalAlignment="Top" Width="120"  x:Name="tbSDRMinBrightness_Copy6" Height="18" InputScope="Number"/>
 
+                <Label Content="Saturation boost:" HorizontalAlignment="Left" Margin="194,64,0,0" VerticalAlignment="Top" Width="211" Height="26" Grid.Column="1"/>
+                <TextBox Grid.Column="1" HorizontalAlignment="Left" Margin="405,68,0,0" TextWrapping="Wrap" Text="{Binding SaturationBoost, NotifyOnValidationError=True, ValidatesOnDataErrors=True}" VerticalAlignment="Top" Width="120" x:Name="tbSaturationBoost" Height="18" InputScope="Number"/>
+
                 <Label Content="Current HDR Luminance (nits):" Margin="-5,94,507,0" VerticalAlignment="Top" Height="26" Grid.ColumnSpan="2"/>
                 <TextBox IsEnabled="{Binding ToneMappingSettingsEnabled}" Grid.Column="1" HorizontalAlignment="Left" Margin="69,98,0,0" TextWrapping="Wrap" Text="{Binding ToneMappingFromLuminance, NotifyOnValidationError=True, ValidatesOnDataErrors=True}" VerticalAlignment="Top" Width="120"  x:Name="tbNitsFrom" Height="18" InputScope="Number"/>
 

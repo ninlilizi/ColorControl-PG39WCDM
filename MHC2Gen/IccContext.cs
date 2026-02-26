@@ -94,6 +94,17 @@ namespace MHC2Gen
             double toeLogRange = Math.Log((minCLL + toeBlendNits) / minCLL);
             double toeEndPQ = PQ((minCLL + toeBlendNits) / 10000.0);
 
+            // Corrective shoulder: scales the gamma-corrected curve toward maxCLL,
+            // preserving its natural gradient shape while pushing luminance up
+            // to stretch highlights across the available dynamic range.
+            // shoulderLiftFactor: fraction of the gap to maxCLL that remains at
+            // full effect (0 = pushed all the way to maxCLL, 1 = no correction).
+            const double shoulderStartNits = 700.0;
+            const double shoulderEndNits = 1200.0;
+            const double shoulderLiftFactor = 0.3;
+            const double maxCLL = 1300.0;
+            double maxCLLPQ = PQ(maxCLL / 10000.0);
+
             RegammaLUT = new double[3, lutSize];
 
             for (var i = 0; i < lutSize; i++)
@@ -138,11 +149,19 @@ namespace MHC2Gen
                     double minRamp = blackLevelPQ + t * toeDimFactor * (toeEndPQ - blackLevelPQ);
                     finalValue = Math.Max(scaled, minRamp);
                 }
+                else if (L_in >= shoulderStartNits)
+                {
+                    // Shoulder: scale the gamma-corrected value toward maxCLLPQ.
+                    // This preserves the curve's gradient shape while pushing
+                    // luminance up. Factor ramps from 1.0 at shoulderStart
+                    // to shoulderLiftFactor at shoulderEnd (and beyond).
+                    double t = Math.Min((L_in - shoulderStartNits) / (shoulderEndNits - shoulderStartNits), 1.0);
+                    double factor = 1.0 - (1.0 - shoulderLiftFactor) * t;
+                    finalValue = maxCLLPQ - factor * (maxCLLPQ - value);
+                }
                 else
                 {
-                    // Above toe - pass through the gamma-corrected curve.
-                    // The SrgbAcm correction pulls values down to counteract
-                    // the monitor's excessively bright native shadow response.
+                    // Mid-range: pass through the gamma-corrected curve unchanged.
                     finalValue = value;
                 }
 
@@ -473,6 +492,7 @@ namespace MHC2Gen
         public double HdrGammaMultiplier { get; set; } = 1.0;
         public double HdrBrightnessMultiplier { get; set; } = 1.0;
         public double WOLEDDesaturationCompensation { get; set; }
+        public double SaturationBoost { get; set; } = 0.98;
     }
 
     internal class IccContext
@@ -1203,24 +1223,7 @@ namespace MHC2Gen
                 Lr /= lumSum; Lg /= lumSum; Lb /= lumSum;
 
                 // Saturation boost (gamut expansion)
-                double satBoost; // (1.0 = no change, >1 increases saturation)
-                if (command.ColorGamut == ColorGamut.Rec2020)
-                {
-                    satBoost = 0.95;
-                }
-                else if (command.ColorGamut == ColorGamut.Rec2020Native)
-                {
-                    // Slight desaturation for adapted primaries compensation
-                    satBoost = 0.98;
-                }
-                else if (command.ColorGamut == ColorGamut.Native)
-                {
-                    satBoost = 1.05;
-                }
-                else
-                {
-                    satBoost = 1.0;
-                }
+                double satBoost = command.SaturationBoost; // (1.0 = no change, >1 increases saturation)
 
                 var saturation_matrix = DenseMatrix.OfArray(new double[,] {
                     { satBoost + (1 - satBoost) * Lr, (1 - satBoost) * Lg, (1 - satBoost) * Lb },
@@ -1326,7 +1329,8 @@ namespace MHC2Gen
                 ToneMappingToLuminance = command.ToneMappingToLuminance,
                 HdrGammaMultiplier = command.HdrGammaMultiplier,
                 HdrBrightnessMultiplier = command.HdrBrightnessMultiplier,
-                WOLEDDesaturationCompensation = 95
+                WOLEDDesaturationCompensation = 95,
+                SaturationBoost = command.SaturationBoost
             };
 
             var ccDesc = JsonSerializer.Serialize(extraInfoTag);
