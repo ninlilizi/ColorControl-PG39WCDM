@@ -99,7 +99,7 @@ namespace MHC2Gen
             // to stretch highlights across the available dynamic range.
             // shoulderLiftFactor: fraction of the gap to maxCLL that remains at
             // full effect (0 = pushed all the way to maxCLL, 1 = no correction).
-            const double shoulderStartNits = 700.0;
+            double shoulderStartNits = whiteLuminance;
             const double shoulderEndNits = 1200.0;
             const double shoulderLiftFactor = 0.3;
             const double maxCLL = 1300.0;
